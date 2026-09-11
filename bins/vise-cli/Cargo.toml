@@ -1,0 +1,14 @@
+[package]
+name = "vise-cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { workspace = true }
+futures = { workspace = true }
+reqwest = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+vise-client = { workspace = true }

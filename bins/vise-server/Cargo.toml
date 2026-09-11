@@ -1,0 +1,15 @@
+[package]
+name = "vise-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow.workspace = true
+dotenvy = "0.15"
+sqlx.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+vise-api.workspace = true
+vise-core.workspace = true
+axum.workspace = true
