@@ -9,8 +9,10 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use vise_client::{
     Client as ViseClient,
-    types::{ClaimRequest, FinishRequest, IssueCredentialRequest, NewSessionEvent,
-        ReportEventsRequest, Session, SessionOutcome, SessionStatus},
+    types::{
+        ClaimRequest, FinishRequest, IssueCredentialRequest, NewSessionEvent, ReportEventsRequest,
+        Session, SessionOutcome, SessionStatus,
+    },
 };
 
 use acp::AcpProcessRuntime;
@@ -42,8 +44,7 @@ struct Cli {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
@@ -54,7 +55,9 @@ async fn main() -> anyhow::Result<()> {
     auth.set_sensitive(true);
     headers.insert(reqwest::header::AUTHORIZATION, auth);
 
-    let http = reqwest::Client::builder().default_headers(headers).build()?;
+    let http = reqwest::Client::builder()
+        .default_headers(headers)
+        .build()?;
     let client = ViseClient::new_with_client(&cli.url, http);
 
     let echo = EchoRuntime;
@@ -122,37 +125,38 @@ async fn run_session(
         cancel.clone(),
     ));
 
-    let github_ctx: Option<(github::PreparedRepo, String, String)> =
-        if session.environment.kind == "github_repo" {
-            match prepare_github(client, &mut session, &workdir).await {
-                Ok(ctx) => Some(ctx),
-                Err(error) => {
-                    heartbeat.abort();
-                    tracing::error!(session_id = %session.id, %error, "workspace preparation failed");
-                    client
-                        .finish_session(
-                            &session.id,
-                            &FinishRequest {
-                                status: SessionStatus::Failed,
-                                stop_reason: None,
-                                error: Some(error.to_string()),
-                                outcome: None,
-                            },
-                        )
-                        .await?;
-                    if !keep_workspaces {
-                        let _ = std::fs::remove_dir_all(&workdir);
-                    }
-                    return Ok(());
-                }
-            }
-        } else {
-            if let Err(error) = std::fs::create_dir_all(&workspace) {
+    let github_ctx: Option<(github::PreparedRepo, String, String)> = if session.environment.kind
+        == "github_repo"
+    {
+        match prepare_github(client, &mut session, &workdir).await {
+            Ok(ctx) => Some(ctx),
+            Err(error) => {
                 heartbeat.abort();
-                return Err(error.into());
+                tracing::error!(session_id = %session.id, %error, "workspace preparation failed");
+                client
+                    .finish_session(
+                        &session.id,
+                        &FinishRequest {
+                            status: SessionStatus::Failed,
+                            stop_reason: None,
+                            error: Some(error.to_string()),
+                            outcome: None,
+                        },
+                    )
+                    .await?;
+                if !keep_workspaces {
+                    let _ = std::fs::remove_dir_all(&workdir);
+                }
+                return Ok(());
             }
-            None
-        };
+        }
+    } else {
+        if let Err(error) = std::fs::create_dir_all(&workspace) {
+            heartbeat.abort();
+            return Err(error.into());
+        }
+        None
+    };
 
     let (events_tx, events_rx) = mpsc::channel::<serde_json::Value>(256);
 
@@ -172,7 +176,13 @@ async fn run_session(
     };
 
     let run_result = runtime
-        .run(&session, &run_workspace, gh_token, events_tx, cancel.clone())
+        .run(
+            &session,
+            &run_workspace,
+            gh_token,
+            events_tx,
+            cancel.clone(),
+        )
         .await;
 
     // events_tx is dropped by run; the uploader drains and flushes what's left.
@@ -211,14 +221,18 @@ async fn run_session(
                     branch: detected.branch,
                 });
             }
-            Err(error) => tracing::warn!(session_id = %session.id, %error, "outcome detection failed"),
+            Err(error) => {
+                tracing::warn!(session_id = %session.id, %error, "outcome detection failed")
+            }
         }
     }
 
     tracing::info!(session_id = %session.id, ?status, "finishing session");
 
     let keep = keep_workspaces
-        || outcome.as_ref().is_some_and(|o| o.kind == "uncommitted_changes");
+        || outcome
+            .as_ref()
+            .is_some_and(|o| o.kind == "uncommitted_changes");
 
     // Capture the result so workspace cleanup runs even when finishing fails.
     let finish_result = client

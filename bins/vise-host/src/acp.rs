@@ -98,8 +98,7 @@ impl SessionRuntime for AcpProcessRuntime {
             .on_receive_notification(
                 async move |notification: SessionNotification, _cx| {
                     // Stored verbatim: ACP does the event modeling, vise doesn't.
-                    let payload =
-                        serde_json::to_value(&notification).map_err(internal_error)?;
+                    let payload = serde_json::to_value(&notification).map_err(internal_error)?;
 
                     notification_events
                         .send(payload)

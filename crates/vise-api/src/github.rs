@@ -25,7 +25,12 @@ impl GitHubAppClient {
         let http = reqwest::Client::builder()
             .user_agent("vise-server")
             .build()?;
-        Ok(Self { app_id, encoding_key, api_base, http })
+        Ok(Self {
+            app_id,
+            encoding_key,
+            api_base,
+            http,
+        })
     }
 
     fn app_jwt(&self) -> anyhow::Result<String> {
@@ -55,7 +60,9 @@ impl GitHubAppClient {
             .json()
             .await?;
 
-        let (_, name) = repo.split_once('/').ok_or_else(|| anyhow::anyhow!("bad repo"))?;
+        let (_, name) = repo
+            .split_once('/')
+            .ok_or_else(|| anyhow::anyhow!("bad repo"))?;
 
         let token: InstallationToken = self
             .http

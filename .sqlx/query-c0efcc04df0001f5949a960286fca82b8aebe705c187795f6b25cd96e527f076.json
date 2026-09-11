@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE sessions\n            SET lease_expires_at = now() + interval '60 seconds',\n                updated_at = now()\n            WHERE id = $2 AND host_id = $1 AND status = 'running'\n            RETURNING cancel_requested\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "cancel_requested",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "cancel_requested"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c0efcc04df0001f5949a960286fca82b8aebe705c187795f6b25cd96e527f076"
+}

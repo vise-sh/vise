@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+# Opt-in pre-commit hook. Enable with: git config core.hooksPath .githooks
+# Runs only the fast formatting check; run `just check` before opening a PR.
+set -e
+cargo fmt --all --check || {
+  echo >&2 "rustfmt found unformatted files. Run 'just fmt' and re-stage."
+  exit 1
+}

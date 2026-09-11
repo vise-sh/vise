@@ -1,0 +1,8 @@
+# cargo-deny configuration. CI runs `cargo deny check advisories` only;
+# license and duplicate-version checks are not enforced yet.
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+ignore = []
