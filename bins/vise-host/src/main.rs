@@ -254,8 +254,18 @@ async fn run_session(
         let pr_lookup = token.as_deref().map(|t| (repo.as_str(), t));
         match github::detect_outcome(prepared, pr_lookup).await {
             Ok(detected) => {
+                // A follow-up that pushed to the PR's own branch updated the
+                // existing PR rather than opening one. Work pushed elsewhere
+                // (a fresh branch and PR) is reported as it was detected.
+                let updated_existing_pr = session.parent_session_id.is_some()
+                    && detected.kind == "pr_opened"
+                    && detected.branch.as_deref() == Some(prepared.base_branch.as_str());
                 outcome = Some(SessionOutcome {
-                    kind: detected.kind,
+                    kind: if updated_existing_pr {
+                        "pr_updated".to_string()
+                    } else {
+                        detected.kind
+                    },
                     pr_url: detected.pr_url,
                     branch: detected.branch,
                 });
@@ -339,14 +349,27 @@ async fn prepare_github(
     )
     .await?;
 
-    session.input = format!(
-        "You are working in a clone of {repo} (currently on branch {base}). Complete the task \
-         below. When done: create a descriptively named branch, commit your work with clear \
-         messages, push it, and open a pull request with `gh pr create`. Report the PR URL in \
-         your final message.\n\n{input}",
-        base = prepared.base_branch,
-        input = session.input,
-    );
+    session.input = if session.parent_session_id.is_some() {
+        // Follow-up: the clone is checked out on the PR's head branch, and the
+        // task is to update that PR, not to open another one.
+        format!(
+            "You are working in a clone of {repo}, checked out on branch {base}, which has an \
+             open pull request. Complete the task below. When done: commit your work with clear \
+             messages and push to the same branch ({base}) so the existing pull request updates. \
+             Do not create a new branch and do not open a new pull request.\n\n{input}",
+            base = prepared.base_branch,
+            input = session.input,
+        )
+    } else {
+        format!(
+            "You are working in a clone of {repo} (currently on branch {base}). Complete the task \
+             below. When done: create a descriptively named branch, commit your work with clear \
+             messages, push it, and open a pull request with `gh pr create`. Report the PR URL in \
+             your final message.\n\n{input}",
+            base = prepared.base_branch,
+            input = session.input,
+        )
+    };
 
     Ok((prepared, repo, secret))
 }

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use super::model::{NewSessionEvent, Session, SessionOutcome, SessionStatus};
+use super::model::{NewSessionEvent, PrStatus, Session, SessionOutcome, SessionStatus};
 
 #[async_trait]
 pub trait SessionRepository: Send + Sync {
@@ -54,4 +54,28 @@ pub trait SessionRepository: Send + Sync {
         error: Option<String>,
         outcome: Option<SessionOutcome>,
     ) -> anyhow::Result<Option<Session>>;
+
+    /// The PR poller's work list: sessions whose outcome is `pr_opened` and
+    /// whose PR snapshot is missing or non-terminal, least recently synced
+    /// first.
+    async fn pr_tracking_work_list(&self, limit: i64) -> anyhow::Result<Vec<Session>>;
+
+    /// Lock one tracked session for a sync pass (`FOR UPDATE SKIP LOCKED`).
+    /// Returns `None` when the session is not (or no longer) tracked, or
+    /// when another poller currently holds it. Drop the handle to abort.
+    async fn begin_pr_sync(&self, id: &str) -> anyhow::Result<Option<Box<dyn PrSync>>>;
+}
+
+/// An in-flight PR sync holding the session row lock. Committing writes the
+/// new snapshot and appends the transition events in one transaction, so the
+/// snapshot ("what is") and the event stream ("what happened") cannot drift.
+#[async_trait]
+pub trait PrSync: Send {
+    fn session(&self) -> &Session;
+
+    async fn commit(
+        self: Box<Self>,
+        status: PrStatus,
+        events: Vec<serde_json::Value>,
+    ) -> anyhow::Result<()>;
 }

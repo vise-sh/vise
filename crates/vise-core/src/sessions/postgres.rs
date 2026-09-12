@@ -3,8 +3,10 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 
 use super::{
-    model::{Agent, Environment, NewSessionEvent, Session, SessionOutcome, SessionStatus},
-    repository::SessionRepository,
+    model::{
+        Agent, Environment, NewSessionEvent, PrStatus, Session, SessionOutcome, SessionStatus,
+    },
+    repository::{PrSync, SessionRepository},
 };
 
 pub struct PostgresSessionRepository {
@@ -30,6 +32,8 @@ struct SessionRow {
     stop_reason: Option<String>,
     error: Option<String>,
     outcome: Option<sqlx::types::Json<SessionOutcome>>,
+    pr_status: Option<sqlx::types::Json<PrStatus>>,
+    parent_session_id: Option<String>,
     cancel_requested: bool,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -50,6 +54,8 @@ impl From<SessionRow> for Session {
             stop_reason: row.stop_reason,
             error: row.error,
             outcome: row.outcome.map(|j| j.0),
+            pr_status: row.pr_status.map(|j| j.0),
+            parent_session_id: row.parent_session_id,
             cancel_requested: row.cancel_requested,
             created_at: row.created_at,
             updated_at: row.updated_at,
@@ -68,10 +74,11 @@ impl SessionRepository for PostgresSessionRepository {
                 environment,
                 input,
                 status,
+                parent_session_id,
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
         )
         .bind(&session.id)
@@ -79,6 +86,7 @@ impl SessionRepository for PostgresSessionRepository {
         .bind(sqlx::types::Json(&session.environment))
         .bind(&session.input)
         .bind(status_str(&session.status))
+        .bind(&session.parent_session_id)
         .bind(session.created_at)
         .bind(session.updated_at)
         .execute(&self.pool)
@@ -104,6 +112,8 @@ impl SessionRepository for PostgresSessionRepository {
                 stop_reason,
                 error,
                 outcome as "outcome: _",
+                pr_status as "pr_status: _",
+                parent_session_id,
                 cancel_requested,
                 created_at,
                 updated_at
@@ -135,6 +145,8 @@ impl SessionRepository for PostgresSessionRepository {
                 stop_reason,
                 error,
                 outcome as "outcome: _",
+                pr_status as "pr_status: _",
+                parent_session_id,
                 cancel_requested,
                 created_at,
                 updated_at
@@ -224,6 +236,8 @@ impl SessionRepository for PostgresSessionRepository {
                 stop_reason,
                 error,
                 outcome as "outcome: _",
+                pr_status as "pr_status: _",
+                parent_session_id,
                 cancel_requested,
                 created_at,
                 updated_at
@@ -329,6 +343,8 @@ impl SessionRepository for PostgresSessionRepository {
                 stop_reason,
                 error,
                 outcome as "outcome: _",
+                pr_status as "pr_status: _",
+                parent_session_id,
                 cancel_requested,
                 created_at,
                 updated_at
@@ -369,6 +385,8 @@ impl SessionRepository for PostgresSessionRepository {
                 stop_reason,
                 error,
                 outcome as "outcome: _",
+                pr_status as "pr_status: _",
+                parent_session_id,
                 cancel_requested,
                 created_at,
                 updated_at
@@ -397,6 +415,141 @@ impl SessionRepository for PostgresSessionRepository {
         .await?;
 
         Ok(result.rows_affected())
+    }
+
+    async fn pr_tracking_work_list(&self, limit: i64) -> anyhow::Result<Vec<Session>> {
+        let rows = sqlx::query_as!(
+            SessionRow,
+            r#"
+            SELECT
+                id,
+                agent as "agent: _",
+                environment as "environment: _",
+                input,
+                status,
+                host_id,
+                lease_expires_at,
+                started_at,
+                finished_at,
+                stop_reason,
+                error,
+                outcome as "outcome: _",
+                pr_status as "pr_status: _",
+                parent_session_id,
+                cancel_requested,
+                created_at,
+                updated_at
+            FROM sessions
+            WHERE outcome ->> 'kind' = 'pr_opened'
+              AND (pr_status IS NULL OR pr_status ->> 'state' NOT IN ('merged', 'closed'))
+            ORDER BY pr_status ->> 'last_synced_at' NULLS FIRST, created_at
+            LIMIT $1
+            "#,
+            limit
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(Session::from).collect())
+    }
+
+    async fn begin_pr_sync(&self, id: &str) -> anyhow::Result<Option<Box<dyn PrSync>>> {
+        let mut tx = self.pool.begin().await?;
+
+        let row = sqlx::query_as!(
+            SessionRow,
+            r#"
+            SELECT
+                id,
+                agent as "agent: _",
+                environment as "environment: _",
+                input,
+                status,
+                host_id,
+                lease_expires_at,
+                started_at,
+                finished_at,
+                stop_reason,
+                error,
+                outcome as "outcome: _",
+                pr_status as "pr_status: _",
+                parent_session_id,
+                cancel_requested,
+                created_at,
+                updated_at
+            FROM sessions
+            WHERE id = $1
+              AND outcome ->> 'kind' = 'pr_opened'
+              AND (pr_status IS NULL OR pr_status ->> 'state' NOT IN ('merged', 'closed'))
+            FOR UPDATE SKIP LOCKED
+            "#,
+            id
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        Ok(row.map(|row| {
+            Box::new(PostgresPrSync {
+                tx,
+                session: Session::from(row),
+            }) as Box<dyn PrSync>
+        }))
+    }
+}
+
+/// Holds the `FOR UPDATE` lock on a tracked session between observing the
+/// PR and writing the result. The lock also serialises event `seq`
+/// allocation: after `finished_at` no host writes events, so the poller owns
+/// the sequence space and `MAX(seq) + n` is safe under the row lock.
+struct PostgresPrSync {
+    tx: sqlx::Transaction<'static, sqlx::Postgres>,
+    session: Session,
+}
+
+#[async_trait]
+impl PrSync for PostgresPrSync {
+    fn session(&self) -> &Session {
+        &self.session
+    }
+
+    async fn commit(
+        mut self: Box<Self>,
+        status: PrStatus,
+        events: Vec<serde_json::Value>,
+    ) -> anyhow::Result<()> {
+        sqlx::query!(
+            r#"
+            UPDATE sessions
+            SET pr_status = $2,
+                updated_at = now()
+            WHERE id = $1
+            "#,
+            self.session.id,
+            sqlx::types::Json(&status) as _
+        )
+        .execute(&mut *self.tx)
+        .await?;
+
+        if !events.is_empty() {
+            sqlx::query!(
+                r#"
+                INSERT INTO session_events (session_id, seq, payload)
+                SELECT
+                    $1,
+                    COALESCE((SELECT MAX(seq) FROM session_events WHERE session_id = $1), 0)
+                        + t.ordinality,
+                    t.payload
+                FROM UNNEST($2::jsonb[]) WITH ORDINALITY AS t(payload, ordinality)
+                "#,
+                self.session.id,
+                &events
+            )
+            .execute(&mut *self.tx)
+            .await?;
+        }
+
+        self.tx.commit().await?;
+        Ok(())
     }
 }
 

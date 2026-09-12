@@ -49,16 +49,16 @@ async fn main() -> anyhow::Result<()> {
         Arc<dyn vise_api::credentials::CredentialProvider>,
     > = std::collections::HashMap::new();
 
+    let github_api_base = std::env::var("VISE_GITHUB_API_BASE")
+        .unwrap_or_else(|_| "https://api.github.com".to_string());
+
     if let (Ok(app_id), Ok(key_path)) = (
         std::env::var("VISE_GITHUB_APP_ID"),
         std::env::var("VISE_GITHUB_APP_PRIVATE_KEY_PATH"),
     ) {
         let pem = std::fs::read_to_string(&key_path)?;
-        let client = vise_api::github::GitHubAppClient::new(
-            app_id.parse()?,
-            &pem,
-            "https://api.github.com".to_string(),
-        )?;
+        let client =
+            vise_api::github::GitHubAppClient::new(app_id.parse()?, &pem, github_api_base.clone())?;
         credentials.insert(
             "github".to_string(),
             Arc::new(vise_api::credentials::GithubCredentialProvider { client }),
@@ -68,10 +68,32 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("github app not configured; github_repo sessions will fail");
     }
 
+    let github = vise_api::github::GitHubApi::new(github_api_base);
+
+    // PR tracker: follows every PR a session opened until it merges or closes,
+    // recording state transitions as session events. Reuses the GitHub
+    // credential provider; the App needs "Pull requests: read" and
+    // "Checks: read" on the tracked repositories.
+    {
+        let interval_secs: u64 = std::env::var("VISE_PR_POLL_INTERVAL_SECS")
+            .ok()
+            .map(|value| value.parse())
+            .transpose()?
+            .unwrap_or(60);
+        let poller = vise_api::pr_tracking::PrPoller::new(
+            sessions.clone(),
+            credentials.get("github").cloned(),
+            github.clone(),
+            std::time::Duration::from_secs(interval_secs.max(1)),
+        );
+        tokio::spawn(poller.run_forever());
+    }
+
     let state = AppState {
         sessions,
         hosts,
         credentials,
+        github,
     };
 
     let app = app(state);

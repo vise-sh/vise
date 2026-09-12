@@ -26,5 +26,7 @@ utoipa-swagger-ui.workspace = true
 vise-core.workspace = true
 
 [dev-dependencies]
+sqlx.workspace = true
 tokio.workspace = true
+tower = { version = "0.5", features = ["util"] }
 wiremock = "0.6"

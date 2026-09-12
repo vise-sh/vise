@@ -3667,7 +3667,9 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sqlx",
  "tokio",
+ "tower",
  "tower-http",
  "tracing",
  "utoipa",
@@ -3681,6 +3683,7 @@ name = "vise-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "futures",
  "reqwest",

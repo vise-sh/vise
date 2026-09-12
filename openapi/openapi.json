@@ -27,6 +27,15 @@
         ],
         "type": "object"
       },
+      "ChecksState": {
+        "description": "Derived state of the check runs on the PR's head commit.",
+        "enum": [
+          "pending",
+          "passing",
+          "failing"
+        ],
+        "type": "string"
+      },
       "ClaimRequest": {
         "properties": {
           "environment_types": {
@@ -153,6 +162,25 @@
         ],
         "type": "object"
       },
+      "FollowUpRequest": {
+        "properties": {
+          "agent": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Agent"
+              }
+            ],
+            "description": "Agent configuration override; defaults to the parent session's.",
+            "nullable": true
+          },
+          "instructions": {
+            "description": "Extra guidance for the agent, appended after the review feedback.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "HeartbeatResponse": {
         "properties": {
           "cancel_requested": {
@@ -254,6 +282,44 @@
         ],
         "type": "object"
       },
+      "PrState": {
+        "description": "Derived review state of a session's pull request. Reduced from GitHub's\nreview list (see `pr_tracking::reduce`); raw reviews are never stored.",
+        "enum": [
+          "review_pending",
+          "changes_requested",
+          "approved",
+          "merged",
+          "closed",
+          "sync_error"
+        ],
+        "type": "string"
+      },
+      "PrStatus": {
+        "description": "Snapshot of what the PR looks like right now. Transitions between\nsnapshots are appended to the session's event stream as\n`pr_state_changed` / `checks_state_changed` events.",
+        "properties": {
+          "checks": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChecksState"
+              }
+            ],
+            "description": "None when the head commit has no check runs.",
+            "nullable": true
+          },
+          "last_synced_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PrState"
+          }
+        },
+        "required": [
+          "state",
+          "last_synced_at"
+        ],
+        "type": "object"
+      },
       "ReportEventsRequest": {
         "properties": {
           "events": {
@@ -315,6 +381,20 @@
             ],
             "nullable": true
           },
+          "parent_session_id": {
+            "description": "Set on follow-up sessions: the session whose PR this one addresses.\nFollow-ups chain; PR tracking always lives on the root session.",
+            "nullable": true,
+            "type": "string"
+          },
+          "pr_status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PrStatus"
+              }
+            ],
+            "description": "PR tracking snapshot; only present once the poller has synced a\nsession whose outcome is `pr_opened`.",
+            "nullable": true
+          },
           "started_at": {
             "format": "date-time",
             "nullable": true,
@@ -374,7 +454,7 @@
             "type": "string"
           },
           "kind": {
-            "description": "\"pr_opened\" | \"pushed_no_pr\" | \"uncommitted_changes\" | \"no_changes\"",
+            "description": "\"pr_opened\" | \"pr_updated\" | \"pushed_no_pr\" | \"uncommitted_changes\" | \"no_changes\"\n\n`pr_updated` is reported by follow-up sessions that pushed to the\nexisting branch of a PR opened by an ancestor session.",
             "type": "string"
           },
           "pr_url": {
@@ -846,6 +926,62 @@
               }
             },
             "description": "Events retrieved"
+          }
+        },
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/sessions/{id}/follow-up": {
+      "post": {
+        "operationId": "follow_up_session",
+        "parameters": [
+          {
+            "description": "Session ID of the session (or follow-up) whose PR to address",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FollowUpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Follow-up session created, targeting the PR's head branch"
+          },
+          "404": {
+            "description": "Session not found"
+          },
+          "409": {
+            "description": "The PR is already merged or closed"
+          },
+          "422": {
+            "description": "The session did not open a pull request"
+          },
+          "502": {
+            "description": "GitHub could not be reached"
+          },
+          "503": {
+            "description": "GitHub credential provider not configured"
           }
         },
         "tags": [
