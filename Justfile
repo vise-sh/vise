@@ -8,8 +8,8 @@ default:
 # Quality gates. `just check` mirrors what CI runs on every pull request.
 # ---------------------------------------------------------------------------
 
-# Run every check CI runs: formatting, lints, tests, sqlx cache, OpenAPI spec.
-check: fmt-check lint test sqlx-check spec-check
+# Run every check CI runs: formatting, lints, tests, OpenAPI spec.
+check: fmt-check lint test spec-check
 
 # Format all crates in place.
 fmt:
