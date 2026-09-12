@@ -40,7 +40,10 @@ async fn git(dir: &Path, args: &[&str]) -> anyhow::Result<String> {
         .output()
         .await?;
     if !out.status.success() {
-        anyhow::bail!("git {args:?} failed: {}", String::from_utf8_lossy(&out.stderr));
+        anyhow::bail!(
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
@@ -80,15 +83,27 @@ pub async fn prepare_workspace(
     git(workdir, &args).await?;
 
     git(&repo_dir, &["config", "user.name", "vise[bot]"]).await?;
-    git(&repo_dir, &["config", "user.email", "vise-bot@users.noreply.github.com"]).await?;
+    git(
+        &repo_dir,
+        &["config", "user.email", "vise-bot@users.noreply.github.com"],
+    )
+    .await?;
 
-    let base_commit = git(&repo_dir, &["rev-parse", "HEAD"]).await?.trim().to_string();
+    let base_commit = git(&repo_dir, &["rev-parse", "HEAD"])
+        .await?
+        .trim()
+        .to_string();
     let base_branch = git(&repo_dir, &["rev-parse", "--abbrev-ref", "HEAD"])
         .await?
         .trim()
         .to_string();
 
-    Ok(PreparedRepo { repo_dir, token_file, base_commit, base_branch })
+    Ok(PreparedRepo {
+        repo_dir,
+        token_file,
+        base_commit,
+        base_branch,
+    })
 }
 
 #[derive(Debug)]
@@ -105,9 +120,15 @@ pub async fn detect_outcome(
     pr_lookup: Option<(&str, &str)>,
 ) -> anyhow::Result<Outcome> {
     let dir = &prepared.repo_dir;
-    let branch = git(dir, &["rev-parse", "--abbrev-ref", "HEAD"]).await?.trim().to_string();
+    let branch = git(dir, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .await?
+        .trim()
+        .to_string();
     let head = git(dir, &["rev-parse", "HEAD"]).await?.trim().to_string();
-    let dirty = !git(dir, &["status", "--porcelain"]).await?.trim().is_empty();
+    let dirty = !git(dir, &["status", "--porcelain"])
+        .await?
+        .trim()
+        .is_empty();
 
     if dirty {
         return Ok(Outcome {
@@ -118,7 +139,11 @@ pub async fn detect_outcome(
     }
 
     if branch == prepared.base_branch && head == prepared.base_commit {
-        return Ok(Outcome { kind: "no_changes".into(), pr_url: None, branch: None });
+        return Ok(Outcome {
+            kind: "no_changes".into(),
+            pr_url: None,
+            branch: None,
+        });
     }
 
     // Committed work exists; is it (fully) on the remote?
@@ -140,17 +165,23 @@ pub async fn detect_outcome(
     if let Some((repo, token)) = pr_lookup
         && let Some(url) = find_open_pr(repo, &branch, token).await?
     {
-        return Ok(Outcome { kind: "pr_opened".into(), pr_url: Some(url), branch: Some(branch) });
+        return Ok(Outcome {
+            kind: "pr_opened".into(),
+            pr_url: Some(url),
+            branch: Some(branch),
+        });
     }
 
-    Ok(Outcome { kind: "pushed_no_pr".into(), pr_url: None, branch: Some(branch) })
+    Ok(Outcome {
+        kind: "pushed_no_pr".into(),
+        pr_url: None,
+        branch: Some(branch),
+    })
 }
 
 async fn find_open_pr(repo: &str, branch: &str, token: &str) -> anyhow::Result<Option<String>> {
     let owner = repo.split('/').next().unwrap_or_default();
-    let url = format!(
-        "https://api.github.com/repos/{repo}/pulls?head={owner}:{branch}&state=open"
-    );
+    let url = format!("https://api.github.com/repos/{repo}/pulls?head={owner}:{branch}&state=open");
     let pulls: serde_json::Value = reqwest::Client::new()
         .get(&url)
         .bearer_auth(token)
@@ -174,9 +205,16 @@ mod tests {
 
     fn sh(dir: &std::path::Path, cmd: &str) -> String {
         let out = std::process::Command::new("sh")
-            .arg("-c").arg(cmd).current_dir(dir)
-            .output().expect("spawn");
-        assert!(out.status.success(), "{cmd}: {}", String::from_utf8_lossy(&out.stderr));
+            .arg("-c")
+            .arg(cmd)
+            .current_dir(dir)
+            .output()
+            .expect("spawn");
+        assert!(
+            out.status.success(),
+            "{cmd}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         String::from_utf8_lossy(&out.stdout).into_owned()
     }
 
@@ -184,11 +222,17 @@ mod tests {
     fn make_origin(tmp: &std::path::Path) -> std::path::PathBuf {
         let src = tmp.join("src");
         std::fs::create_dir_all(&src).unwrap();
-        sh(&src, "git init -b main -q && git config user.email t@t && git config user.name t");
+        sh(
+            &src,
+            "git init -b main -q && git config user.email t@t && git config user.name t",
+        );
         std::fs::write(src.join("README.md"), "hi").unwrap();
         sh(&src, "git add . && git commit -qm init");
         let bare = tmp.join("origin.git");
-        sh(tmp, &format!("git clone -q --bare {} {}", src.display(), bare.display()));
+        sh(
+            tmp,
+            &format!("git clone -q --bare {} {}", src.display(), bare.display()),
+        );
         bare
     }
 
@@ -209,13 +253,22 @@ mod tests {
             "main"
         );
         // identity is clone-local
-        assert_eq!(sh(&prepared.repo_dir, "git config user.name").trim(), "vise[bot]");
+        assert_eq!(
+            sh(&prepared.repo_dir, "git config user.name").trim(),
+            "vise[bot]"
+        );
         // credential helper persisted into the clone via `git clone -c`
         assert!(sh(&prepared.repo_dir, "git config credential.helper").contains("github-token"));
         // token file exists and is refreshable
-        assert_eq!(std::fs::read_to_string(&prepared.token_file).unwrap(), "tok_initial");
+        assert_eq!(
+            std::fs::read_to_string(&prepared.token_file).unwrap(),
+            "tok_initial"
+        );
         write_token_file(&prepared.token_file, "tok_refreshed").unwrap();
-        assert_eq!(std::fs::read_to_string(&prepared.token_file).unwrap(), "tok_refreshed");
+        assert_eq!(
+            std::fs::read_to_string(&prepared.token_file).unwrap(),
+            "tok_refreshed"
+        );
         // base commit recorded
         assert_eq!(
             prepared.base_commit,
@@ -226,7 +279,9 @@ mod tests {
     async fn prepared(tmp: &std::path::Path) -> PreparedRepo {
         let origin = make_origin(tmp);
         let url = format!("file://{}", origin.display());
-        prepare_workspace(&tmp.join("work"), &url, Some("main"), "tok").await.unwrap()
+        prepare_workspace(&tmp.join("work"), &url, Some("main"), "tok")
+            .await
+            .unwrap()
     }
 
     #[tokio::test]
@@ -250,7 +305,10 @@ mod tests {
     async fn detects_pushed_branch_without_pr() {
         let tmp = tempfile::tempdir().unwrap();
         let p = prepared(tmp.path()).await;
-        sh(&p.repo_dir, "git checkout -qb vise/test && git commit -qm work --allow-empty && git push -q origin vise/test");
+        sh(
+            &p.repo_dir,
+            "git checkout -qb vise/test && git commit -qm work --allow-empty && git push -q origin vise/test",
+        );
         let outcome = detect_outcome(&p, None).await.unwrap();
         assert_eq!(outcome.kind, "pushed_no_pr");
         assert_eq!(outcome.branch.as_deref(), Some("vise/test"));
@@ -260,7 +318,10 @@ mod tests {
     async fn detects_committed_but_unpushed_as_uncommitted_kind() {
         let tmp = tempfile::tempdir().unwrap();
         let p = prepared(tmp.path()).await;
-        sh(&p.repo_dir, "git checkout -qb vise/test && git commit -qm work --allow-empty");
+        sh(
+            &p.repo_dir,
+            "git checkout -qb vise/test && git commit -qm work --allow-empty",
+        );
         let outcome = detect_outcome(&p, None).await.unwrap();
         // local-only work: without a push there is nothing on GitHub
         assert_eq!(outcome.kind, "uncommitted_changes");
