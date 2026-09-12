@@ -1,0 +1,4 @@
+# Formatting is intentionally left at rustfmt defaults so that `cargo fmt`
+# and editor integrations agree without extra configuration.
+edition = "2024"
+style_edition = "2024"

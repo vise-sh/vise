@@ -1,0 +1,83 @@
+name: Bug report
+description: Something is broken or behaves differently from what the docs say.
+title: "[bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in as much of
+        this form as you can; a small, reliable reproduction is the single most
+        useful thing you can give us.
+
+        **Security issues:** do not file them here. See [SECURITY.md](https://github.com/vise-sh/vise/blob/main/SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `vise --version`, or the commit SHA if built from source.
+      placeholder: "vise 0.1.0 / 0dc6b22"
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of vise is affected?
+      options:
+        - vise-cli
+        - vise-server
+        - vise-host
+        - vise-api (HTTP API / OpenAPI spec)
+        - vise-client (generated client)
+        - vise-core
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: OS and architecture, e.g. `macOS 15.1 (arm64)` or `Ubuntu 24.04 (x86_64)`.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands and configuration. Include `docker compose` and `DATABASE_URL` details if the server or database is involved.
+      placeholder: |
+        1. `just db-up && just db-migrate`
+        2. `cargo run -p vise-server`
+        3. `vise sessions create "..."`
+        4. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What happened instead? Include the full error message if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Server or host output (`RUST_LOG=debug` is helpful). This is rendered as a code block automatically; redact tokens and secrets.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this has not been reported.
+          required: true
+        - label: I have redacted any tokens, credentials or private repository names from the logs above.
+          required: true

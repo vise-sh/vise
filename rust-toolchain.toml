@@ -1,0 +1,5 @@
+# Keeps every developer and CI on the same channel, with the tooling that
+# `just check` needs installed automatically by rustup.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]

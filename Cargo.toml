@@ -5,6 +5,26 @@ members = [
 ]
 resolver = "2"
 
+# Keys shared by every crate via `<key>.workspace = true`.
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/vise-sh/vise"
+
+# Shared lint configuration. Every crate opts in with `[lints] workspace = true`.
+# Clippy runs with `-D warnings` in CI (see `just lint`), so anything that
+# warns here fails the build. Prefer fixing over `#[allow]`; if you must allow,
+# scope it narrowly and leave a comment saying why.
+[workspace.lints.rust]
+unsafe_code = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+
 [workspace.dependencies]
 anyhow = "1.0.104"
 async-trait = "0.1.92"
@@ -36,3 +56,8 @@ uuid = { version = "1.26.1", features = ["v4", "v7", "serde"] }
 vise-api = { path = "crates/vise-api" }
 vise-client = { path = "crates/vise-client" }
 vise-core = { path = "crates/vise-core" }
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

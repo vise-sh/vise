@@ -351,21 +351,27 @@ pub async fn issue_credential(
 
     // Only the host holding the running lease may obtain credentials.
     if session.host_id.as_deref() != Some(host.id.as_str())
-        || !matches!(session.status, vise_core::sessions::model::SessionStatus::Running)
+        || !matches!(
+            session.status,
+            vise_core::sessions::model::SessionStatus::Running
+        )
     {
         return Err(StatusCode::CONFLICT);
     }
 
-    let issued = provider.issue(&session).await.map_err(|error| match error {
-        IssueError::NotApplicable(reason) => {
-            tracing::warn!(%reason, provider = %request.provider, "credential not applicable");
-            StatusCode::UNPROCESSABLE_ENTITY
-        }
-        IssueError::Upstream(error) => {
-            tracing::error!(%error, provider = %request.provider, "credential issue failed");
-            StatusCode::BAD_GATEWAY
-        }
-    })?;
+    let issued = provider
+        .issue(&session)
+        .await
+        .map_err(|error| match error {
+            IssueError::NotApplicable(reason) => {
+                tracing::warn!(%reason, provider = %request.provider, "credential not applicable");
+                StatusCode::UNPROCESSABLE_ENTITY
+            }
+            IssueError::Upstream(error) => {
+                tracing::error!(%error, provider = %request.provider, "credential issue failed");
+                StatusCode::BAD_GATEWAY
+            }
+        })?;
 
     Ok(Json(IssueCredentialResponse {
         provider: request.provider,

@@ -1,0 +1,13 @@
+# Codecov is informational only: it comments on PRs and shows the badge, but
+# the status checks it posts never fail, so coverage does not gate merges.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+comment:
+  layout: "condensed_header, diff, files"
+  require_changes: true

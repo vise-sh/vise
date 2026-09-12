@@ -122,7 +122,11 @@ mod tests {
 
     #[test]
     fn self_hosted_needs_no_repo() {
-        let env = Environment { kind: "self_hosted".into(), repo: None, base_branch: None };
+        let env = Environment {
+            kind: "self_hosted".into(),
+            repo: None,
+            base_branch: None,
+        };
         assert!(env.validate().is_ok());
     }
 
@@ -133,8 +137,16 @@ mod tests {
 
     #[test]
     fn github_repo_accepts_owner_slash_name() {
-        assert!(github_env(Some("vise-sh/vise-new"), None).validate().is_ok());
-        assert!(github_env(Some("vise-sh/vise-new"), Some("main")).validate().is_ok());
+        assert!(
+            github_env(Some("vise-sh/vise-new"), None)
+                .validate()
+                .is_ok()
+        );
+        assert!(
+            github_env(Some("vise-sh/vise-new"), Some("main"))
+                .validate()
+                .is_ok()
+        );
     }
 
     #[test]
@@ -149,13 +161,20 @@ mod tests {
             "own er/name",
             "owner/na?me",
         ] {
-            assert!(github_env(Some(bad), None).validate().is_err(), "{bad:?} should fail");
+            assert!(
+                github_env(Some(bad), None).validate().is_err(),
+                "{bad:?} should fail"
+            );
         }
     }
 
     #[test]
     fn unknown_kind_rejected() {
-        let env = Environment { kind: "kubernetes".into(), repo: None, base_branch: None };
+        let env = Environment {
+            kind: "kubernetes".into(),
+            repo: None,
+            base_branch: None,
+        };
         assert!(env.validate().is_err());
     }
 }

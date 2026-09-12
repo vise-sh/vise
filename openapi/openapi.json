@@ -402,7 +402,8 @@
   "info": {
     "description": "API for managing Vise agent sessions",
     "license": {
-      "name": ""
+      "identifier": "MIT OR Apache-2.0",
+      "name": "MIT OR Apache-2.0"
     },
     "title": "Vise API",
     "version": "0.1.0"
