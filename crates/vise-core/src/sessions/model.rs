@@ -50,12 +50,94 @@ impl Environment {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SessionOutcome {
-    /// "pr_opened" | "pushed_no_pr" | "uncommitted_changes" | "no_changes"
+    /// "pr_opened" | "pr_updated" | "pushed_no_pr" | "uncommitted_changes" | "no_changes"
+    ///
+    /// `pr_updated` is reported by follow-up sessions that pushed to the branch
+    /// of an existing pull request; it carries the same fields as `pr_opened`.
     pub kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pr_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
+}
+
+impl SessionOutcome {
+    pub const PR_OPENED: &'static str = "pr_opened";
+    pub const PR_UPDATED: &'static str = "pr_updated";
+
+    /// True when this outcome opened a pull request that vise tracks.
+    pub fn opened_pr(&self) -> bool {
+        self.kind == Self::PR_OPENED && self.pr_url.is_some()
+    }
+}
+
+/// Derived review state of a tracked pull request.
+///
+/// Reduced from GitHub's review list and PR flags by
+/// [`super::pr_tracking::reduce`]; raw reviews are never persisted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PrState {
+    /// Open, no outstanding decision from any reviewer.
+    ReviewPending,
+    /// At least one reviewer's latest decision is "changes requested".
+    ChangesRequested,
+    /// At least one approval against the current head and no outstanding change requests.
+    Approved,
+    /// Terminal: the PR was merged.
+    Merged,
+    /// Terminal: the PR was closed without merging.
+    Closed,
+    /// The PR could not be read from GitHub for several consecutive polls.
+    SyncError,
+}
+
+impl PrState {
+    /// Terminal states leave the poller's work list forever.
+    pub fn is_terminal(self) -> bool {
+        matches!(self, PrState::Merged | PrState::Closed)
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PrState::ReviewPending => "review_pending",
+            PrState::ChangesRequested => "changes_requested",
+            PrState::Approved => "approved",
+            PrState::Merged => "merged",
+            PrState::Closed => "closed",
+            PrState::SyncError => "sync_error",
+        }
+    }
+}
+
+/// Aggregate state of the check runs on a tracked PR's head commit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ChecksState {
+    Pending,
+    Passing,
+    Failing,
+}
+
+impl ChecksState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ChecksState::Pending => "pending",
+            ChecksState::Passing => "passing",
+            ChecksState::Failing => "failing",
+        }
+    }
+}
+
+/// Snapshot of a tracked pull request. Present only on sessions whose outcome
+/// opened a PR (`outcome.kind == "pr_opened"`), once the poller has synced it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PrStatus {
+    pub state: PrState,
+    /// None when the head commit has no check runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checks: Option<ChecksState>,
+    pub last_synced_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -80,6 +162,13 @@ pub struct Session {
     pub error: Option<String>,
     pub outcome: Option<SessionOutcome>,
     pub cancel_requested: bool,
+    /// Set on follow-up sessions: the session whose PR this one addresses.
+    /// Follow-ups chain; PR tracking always lives on the root session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
+    /// Tracked PR snapshot; only populated for `pr_opened` outcomes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr_status: Option<PrStatus>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -122,7 +211,11 @@ mod tests {
 
     #[test]
     fn self_hosted_needs_no_repo() {
-        let env = Environment { kind: "self_hosted".into(), repo: None, base_branch: None };
+        let env = Environment {
+            kind: "self_hosted".into(),
+            repo: None,
+            base_branch: None,
+        };
         assert!(env.validate().is_ok());
     }
 
@@ -133,8 +226,16 @@ mod tests {
 
     #[test]
     fn github_repo_accepts_owner_slash_name() {
-        assert!(github_env(Some("vise-sh/vise-new"), None).validate().is_ok());
-        assert!(github_env(Some("vise-sh/vise-new"), Some("main")).validate().is_ok());
+        assert!(
+            github_env(Some("vise-sh/vise-new"), None)
+                .validate()
+                .is_ok()
+        );
+        assert!(
+            github_env(Some("vise-sh/vise-new"), Some("main"))
+                .validate()
+                .is_ok()
+        );
     }
 
     #[test]
@@ -149,13 +250,20 @@ mod tests {
             "own er/name",
             "owner/na?me",
         ] {
-            assert!(github_env(Some(bad), None).validate().is_err(), "{bad:?} should fail");
+            assert!(
+                github_env(Some(bad), None).validate().is_err(),
+                "{bad:?} should fail"
+            );
         }
     }
 
     #[test]
     fn unknown_kind_rejected() {
-        let env = Environment { kind: "kubernetes".into(), repo: None, base_branch: None };
+        let env = Environment {
+            kind: "kubernetes".into(),
+            repo: None,
+            base_branch: None,
+        };
         assert!(env.validate().is_err());
     }
 }

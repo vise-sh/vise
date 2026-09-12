@@ -5,6 +5,7 @@ use futures::StreamExt;
 use serde_json::Value;
 use vise_client::{
     Client as ViseClient, types::Agent, types::CreateSessionRequest, types::Environment,
+    types::FollowUpRequest, types::Session,
 };
 
 #[derive(Parser)]
@@ -104,7 +105,24 @@ enum SessionsCommand {
         session: String,
     },
 
-    /// Live-tail a session's events
+    /// Spawn a follow-up session that addresses review feedback on a completed
+    /// session's pull request. The server inlines the PR's current review
+    /// comments and failing checks into the new session's input.
+    FollowUp {
+        /// Parent session ID (a follow-up may itself be the parent)
+        session: String,
+
+        /// Extra guidance inlined with the review feedback
+        #[arg(long)]
+        instructions: Option<String>,
+
+        /// Watch the follow-up after creating it
+        #[arg(long)]
+        watch: bool,
+    },
+
+    /// Live-tail a session's events. On a completed session that opened a
+    /// PR, tails PR-state events until the PR merges or closes.
     Watch {
         /// Session ID
         session: String,
@@ -190,6 +208,30 @@ async fn main() -> anyhow::Result<()> {
                 println!("{}", serde_json::to_string_pretty(&session)?);
             }
 
+            SessionsCommand::FollowUp {
+                session,
+                instructions,
+                watch,
+            } => {
+                let follow_up = client
+                    .follow_up_session(
+                        &session,
+                        &FollowUpRequest {
+                            instructions,
+                            agent: None,
+                        },
+                    )
+                    .await?
+                    .into_inner();
+
+                if watch {
+                    eprintln!("created follow-up {} (parent {session})", follow_up.id);
+                    watch_session(&client, &cli.url, &follow_up.id, 0).await?;
+                } else {
+                    println!("{}", serde_json::to_string_pretty(&follow_up)?);
+                }
+            }
+
             SessionsCommand::Watch { session, after_seq } => {
                 watch_session(&client, &cli.url, &session, after_seq).await?;
             }
@@ -209,7 +251,10 @@ async fn main() -> anyhow::Result<()> {
 
                 println!("{}", serde_json::to_string_pretty(&enrolled.host)?);
                 eprintln!("\ntoken (shown once — save it):\n{}", enrolled.token);
-                eprintln!("\nrun the host with:\n  VISE_HOST_TOKEN={} cargo run -p vise-host", enrolled.token);
+                eprintln!(
+                    "\nrun the host with:\n  VISE_HOST_TOKEN={} cargo run -p vise-host",
+                    enrolled.token
+                );
             }
         },
     }
@@ -243,9 +288,14 @@ async fn watch_session(
     println!();
 
     let session = client.get_session(session_id).await?.into_inner();
-    if let Some(outcome) = session.outcome {
-        match (outcome.kind.as_str(), outcome.pr_url, outcome.branch) {
-            ("pr_opened", Some(url), _) => println!("PR: {url}"),
+    if let Some(outcome) = &session.outcome {
+        match (
+            outcome.kind.as_str(),
+            outcome.pr_url.as_deref(),
+            outcome.branch.as_deref(),
+        ) {
+            ("pr_opened", Some(url), _) => println!("PR: {url}{}", pr_summary(&session)),
+            ("pr_updated", Some(url), _) => println!("PR updated: {url}"),
             ("pushed_no_pr", _, Some(branch)) => println!("pushed branch {branch} (no PR)"),
             ("uncommitted_changes", _, _) => {
                 println!("warning: agent left uncommitted work; workspace kept on host")
@@ -256,6 +306,17 @@ async fn watch_session(
     }
 
     Ok(())
+}
+
+/// " [state, checks]" for a tracked PR, or "" when the poller has not synced it.
+fn pr_summary(session: &Session) -> String {
+    match &session.pr_status {
+        Some(status) => match &status.checks {
+            Some(checks) => format!(" [{}, checks {}]", status.state, checks),
+            None => format!(" [{}]", status.state),
+        },
+        None => String::new(),
+    }
 }
 
 fn render_sse_event(raw: &str) {
@@ -295,6 +356,27 @@ fn render_payload(payload: &Value) {
     if payload["permissionRequest"].is_object() {
         println!("\n[permission auto-approved]");
         return;
+    }
+
+    // PR tracking transitions appended by the server after the session finished.
+    match payload["type"].as_str() {
+        Some("pr_state_changed") => {
+            println!(
+                "\n[pr] state: {} → {}",
+                payload["from"].as_str().unwrap_or("-"),
+                payload["to"].as_str().unwrap_or("-")
+            );
+            return;
+        }
+        Some("checks_state_changed") => {
+            println!(
+                "\n[pr] checks: {} → {}",
+                payload["from"].as_str().unwrap_or("-"),
+                payload["to"].as_str().unwrap_or("-")
+            );
+            return;
+        }
+        _ => {}
     }
 
     match update["sessionUpdate"].as_str() {

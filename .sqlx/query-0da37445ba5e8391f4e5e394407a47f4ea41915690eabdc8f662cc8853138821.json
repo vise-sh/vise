@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE sessions\n            SET pr_sync_failures = pr_sync_failures + 1,\n                updated_at = now()\n            WHERE id = $1\n            RETURNING pr_sync_failures\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pr_sync_failures",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "pr_sync_failures"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0da37445ba5e8391f4e5e394407a47f4ea41915690eabdc8f662cc8853138821"
+}

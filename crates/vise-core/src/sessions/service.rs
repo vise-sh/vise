@@ -31,6 +31,18 @@ where
         environment: super::model::Environment,
         input: String,
     ) -> anyhow::Result<Session> {
+        self.create_with_parent(agent, environment, input, None)
+            .await
+    }
+
+    /// Create a session, optionally as a follow-up to `parent_session_id`.
+    pub async fn create_with_parent(
+        &self,
+        agent: super::model::Agent,
+        environment: super::model::Environment,
+        input: String,
+        parent_session_id: Option<String>,
+    ) -> anyhow::Result<Session> {
         let now = Utc::now();
 
         let session = Session {
@@ -47,11 +59,40 @@ where
             error: None,
             outcome: None,
             cancel_requested: false,
+            parent_session_id,
+            pr_status: None,
             created_at: now,
             updated_at: now,
         };
 
         self.repository.create(session).await
+    }
+
+    /// Follow the `parent_session_id` chain from `id` to the session that
+    /// opened the PR. Returns `None` if `id` (or a link in the chain) is
+    /// missing. PR tracking always lives on the root, so follow-up validation
+    /// and input composition read from it.
+    pub async fn resolve_root(&self, id: &str) -> anyhow::Result<Option<Session>> {
+        // Chains are short in practice; the bound guards against a cycle that
+        // could only be introduced by hand-editing the database.
+        const MAX_DEPTH: usize = 64;
+
+        let mut current = match self.repository.get(id).await? {
+            Some(session) => session,
+            None => return Ok(None),
+        };
+
+        for _ in 0..MAX_DEPTH {
+            let Some(parent_id) = current.parent_session_id.clone() else {
+                return Ok(Some(current));
+            };
+            current = match self.repository.get(&parent_id).await? {
+                Some(session) => session,
+                None => anyhow::bail!("follow-up chain broken: parent {parent_id} missing"),
+            };
+        }
+
+        anyhow::bail!("follow-up chain from {id} exceeds {MAX_DEPTH} links")
     }
 
     pub async fn get_events(

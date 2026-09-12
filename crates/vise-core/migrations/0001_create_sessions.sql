@@ -12,6 +12,12 @@ CREATE TABLE sessions (
     error TEXT,
     outcome JSONB,
     cancel_requested BOOLEAN NOT NULL DEFAULT false,
+    -- follow-up sessions point at the session whose PR they address
+    parent_session_id TEXT REFERENCES sessions(id),
+    -- derived PR snapshot ({state, checks, last_synced_at}); only for pr_opened outcomes
+    pr_status JSONB,
+    -- consecutive 401/403/404 polls; reaching the threshold sets pr_status.state = sync_error
+    pr_sync_failures INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
 );
@@ -22,6 +28,16 @@ CREATE INDEX sessions_created_at_idx
 CREATE INDEX sessions_pending_created_at_idx
     ON sessions (created_at)
     WHERE status = 'pending';
+
+-- PR tracking work list: completed sessions that opened a PR. The poller
+-- further filters out terminal (merged/closed) snapshots.
+CREATE INDEX sessions_pr_tracking_idx
+    ON sessions (created_at)
+    WHERE outcome->>'kind' = 'pr_opened';
+
+CREATE INDEX sessions_parent_session_id_idx
+    ON sessions (parent_session_id)
+    WHERE parent_session_id IS NOT NULL;
 
 CREATE TABLE hosts (
     id TEXT PRIMARY KEY,

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO session_events (session_id, seq, payload)\n                SELECT\n                    $1,\n                    COALESCE((SELECT MAX(seq) FROM session_events WHERE session_id = $1), 0)\n                        + t.ordinality,\n                    t.payload\n                FROM UNNEST($2::jsonb[]) WITH ORDINALITY AS t(payload, ordinality)\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "JsonbArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b6bf3f7bb404b6be5408689ab1a5f8bb47adbb40172ec9acaf9faaeb13c5715f"
+}

@@ -1,7 +1,32 @@
 set positional-arguments
 
+# Everything CI expects: formatting, lints, tests, and no drift in the
+# generated OpenAPI spec or the sqlx offline query cache.
+# Requires DATABASE_URL (integration tests create throwaway databases on it).
+check: fmt-check lint test spec-check sqlx-check
+
+fmt-check:
+    cargo fmt --all -- --check
+
+lint:
+    cargo clippy --workspace --all-targets -- -D warnings
+
+test:
+    cargo test --workspace
+
 gen-spec:
     cargo run --example openapi -p vise-api
+
+# Fails when openapi/openapi.json is stale relative to the route definitions.
+spec-check: gen-spec
+    git diff --exit-code -- openapi/openapi.json
+
+# Regenerate .sqlx so the workspace compiles without a live database.
+sqlx-prepare:
+    cargo sqlx prepare --workspace -- --all-targets
+
+sqlx-check:
+    cargo sqlx prepare --workspace --check -- --all-targets
 
 db-up:
     docker compose up -d postgres

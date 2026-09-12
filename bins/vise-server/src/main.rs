@@ -11,8 +11,7 @@ async fn main() -> anyhow::Result<()> {
 
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
@@ -26,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
     let sessions = Arc::new(SessionService::new(PostgresSessionRepository::new(
         pool.clone(),
     )));
-    let hosts = Arc::new(HostService::new(PostgresHostRepository::new(pool)));
+    let hosts = Arc::new(HostService::new(PostgresHostRepository::new(pool.clone())));
 
     // Lease-expiry sweeper: hosts that crash stop heartbeating, so their
     // running sessions are failed once the lease lapses.
@@ -45,6 +44,9 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    let github_api_base =
+        std::env::var("VISE_GITHUB_API_BASE").unwrap_or_else(|_| "https://api.github.com".into());
+
     let mut credentials: std::collections::HashMap<
         String,
         Arc<dyn vise_api::credentials::CredentialProvider>,
@@ -55,11 +57,8 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("VISE_GITHUB_APP_PRIVATE_KEY_PATH"),
     ) {
         let pem = std::fs::read_to_string(&key_path)?;
-        let client = vise_api::github::GitHubAppClient::new(
-            app_id.parse()?,
-            &pem,
-            "https://api.github.com".to_string(),
-        )?;
+        let client =
+            vise_api::github::GitHubAppClient::new(app_id.parse()?, &pem, github_api_base.clone())?;
         credentials.insert(
             "github".to_string(),
             Arc::new(vise_api::credentials::GithubCredentialProvider { client }),
@@ -69,10 +68,39 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("github app not configured; github_repo sessions will fail");
     }
 
+    let github = vise_api::github::GitHubReadClient::new(github_api_base)?;
+
+    // PR tracking poller: keeps pr_opened sessions' PR snapshots fresh and
+    // records transitions as session events. Needs the GitHub App credential
+    // (pull_requests: read, checks: read); without it nothing is tracked.
+    let pr_tracking_enabled = match credentials.get("github") {
+        Some(provider) => {
+            let interval = std::env::var("VISE_PR_POLL_INTERVAL_SECS")
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+                .map(std::time::Duration::from_secs)
+                .unwrap_or(vise_api::pr_tracking::DEFAULT_INTERVAL);
+            let tracker = vise_api::pr_tracking::PrTracker::new(
+                PostgresSessionRepository::new(pool.clone()),
+                github.clone(),
+                provider.clone(),
+                interval,
+            );
+            tokio::spawn(tracker.run());
+            true
+        }
+        None => {
+            tracing::warn!("github app not configured; pr tracking disabled");
+            false
+        }
+    };
+
     let state = AppState {
         sessions,
         hosts,
         credentials,
+        github,
+        pr_tracking_enabled,
     };
 
     let app = app(state);

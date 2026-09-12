@@ -3,7 +3,9 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 
 use super::{
-    model::{Agent, Environment, NewSessionEvent, Session, SessionOutcome, SessionStatus},
+    model::{
+        Agent, Environment, NewSessionEvent, PrStatus, Session, SessionOutcome, SessionStatus,
+    },
     repository::SessionRepository,
 };
 
@@ -31,6 +33,9 @@ struct SessionRow {
     error: Option<String>,
     outcome: Option<sqlx::types::Json<SessionOutcome>>,
     cancel_requested: bool,
+    parent_session_id: Option<String>,
+    pr_status: Option<sqlx::types::Json<PrStatus>>,
+    pr_sync_failures: i32,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -51,9 +56,176 @@ impl From<SessionRow> for Session {
             error: row.error,
             outcome: row.outcome.map(|j| j.0),
             cancel_requested: row.cancel_requested,
+            parent_session_id: row.parent_session_id,
+            pr_status: row.pr_status.map(|j| j.0),
             created_at: row.created_at,
             updated_at: row.updated_at,
         }
+    }
+}
+
+/// A session claimed for one PR-tracking poll. Holds the row lock (inside an
+/// open transaction) until it is recorded or released, so concurrent server
+/// instances skip it via `FOR UPDATE SKIP LOCKED`.
+pub struct PrTrackingClaim {
+    tx: sqlx::Transaction<'static, sqlx::Postgres>,
+    pub session: Session,
+    /// Consecutive 401/403/404 polls before this one.
+    pub sync_failures: i32,
+}
+
+impl PostgresSessionRepository {
+    /// Lock the next session whose PR needs syncing: a `pr_opened` outcome,
+    /// a non-terminal (or absent) snapshot, and a snapshot older than
+    /// `synced_before`. `exclude` skips sessions already handled this tick
+    /// (needed because a failed poll deliberately leaves `last_synced_at`
+    /// untouched). Returns `None` when the work list is empty.
+    pub async fn claim_pr_tracking(
+        &self,
+        synced_before: DateTime<Utc>,
+        exclude: &[String],
+    ) -> anyhow::Result<Option<PrTrackingClaim>> {
+        let mut tx = self.pool.begin().await?;
+
+        let row = sqlx::query_as!(
+            SessionRow,
+            r#"
+            SELECT
+                id,
+                agent as "agent: _",
+                environment as "environment: _",
+                input,
+                status,
+                host_id,
+                lease_expires_at,
+                started_at,
+                finished_at,
+                stop_reason,
+                error,
+                outcome as "outcome: _",
+                cancel_requested,
+                parent_session_id,
+                pr_status as "pr_status: _",
+                pr_sync_failures,
+                created_at,
+                updated_at
+            FROM sessions
+            WHERE outcome->>'kind' = 'pr_opened'
+              AND outcome->>'pr_url' IS NOT NULL
+              AND (pr_status IS NULL OR pr_status->>'state' NOT IN ('merged', 'closed'))
+              AND (pr_status IS NULL OR (pr_status->>'last_synced_at')::timestamptz < $1)
+              AND NOT (id = ANY($2))
+            ORDER BY (pr_status->>'last_synced_at')::timestamptz ASC NULLS FIRST, created_at ASC
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+            "#,
+            synced_before,
+            exclude
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        match row {
+            Some(row) => {
+                let sync_failures = row.pr_sync_failures;
+                Ok(Some(PrTrackingClaim {
+                    tx,
+                    session: Session::from(row),
+                    sync_failures,
+                }))
+            }
+            None => {
+                tx.rollback().await?;
+                Ok(None)
+            }
+        }
+    }
+
+    /// Write the new snapshot and append its transition events in the claim's
+    /// transaction, then commit. Resets the failure counter. Event `seq`
+    /// continues after the session's last event; after `finished_at` the
+    /// poller is the only writer, so the row lock is enough to serialize.
+    pub async fn record_pr_status(
+        &self,
+        claim: PrTrackingClaim,
+        status: &PrStatus,
+        events: &[serde_json::Value],
+    ) -> anyhow::Result<()> {
+        let PrTrackingClaim {
+            mut tx, session, ..
+        } = claim;
+
+        sqlx::query!(
+            r#"
+            UPDATE sessions
+            SET pr_status = $2,
+                pr_sync_failures = 0,
+                updated_at = now()
+            WHERE id = $1
+            "#,
+            session.id,
+            sqlx::types::Json(status) as _
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        if !events.is_empty() {
+            sqlx::query!(
+                r#"
+                INSERT INTO session_events (session_id, seq, payload)
+                SELECT
+                    $1,
+                    COALESCE((SELECT MAX(seq) FROM session_events WHERE session_id = $1), 0)
+                        + t.ordinality,
+                    t.payload
+                FROM UNNEST($2::jsonb[]) WITH ORDINALITY AS t(payload, ordinality)
+                "#,
+                session.id,
+                events
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Count a 401/403/404 poll against the session without touching the
+    /// snapshot. The transaction stays open so the caller can either
+    /// [`commit_pr_tracking`](Self::commit_pr_tracking) or, once the failure
+    /// threshold is reached, write a `sync_error` snapshot atomically.
+    pub async fn record_pr_sync_failure(
+        &self,
+        mut claim: PrTrackingClaim,
+    ) -> anyhow::Result<PrTrackingClaim> {
+        let failures = sqlx::query_scalar!(
+            r#"
+            UPDATE sessions
+            SET pr_sync_failures = pr_sync_failures + 1,
+                updated_at = now()
+            WHERE id = $1
+            RETURNING pr_sync_failures
+            "#,
+            claim.session.id
+        )
+        .fetch_one(&mut *claim.tx)
+        .await?;
+
+        claim.sync_failures = failures;
+        Ok(claim)
+    }
+
+    /// Commit whatever the claim's transaction wrote and release the row.
+    pub async fn commit_pr_tracking(&self, claim: PrTrackingClaim) -> anyhow::Result<()> {
+        claim.tx.commit().await?;
+        Ok(())
+    }
+
+    /// Give the row back untouched (transient failure, rate limit, shutdown).
+    pub async fn release_pr_tracking(&self, claim: PrTrackingClaim) -> anyhow::Result<()> {
+        claim.tx.rollback().await?;
+        Ok(())
     }
 }
 
@@ -68,10 +240,11 @@ impl SessionRepository for PostgresSessionRepository {
                 environment,
                 input,
                 status,
+                parent_session_id,
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             "#,
         )
         .bind(&session.id)
@@ -79,6 +252,7 @@ impl SessionRepository for PostgresSessionRepository {
         .bind(sqlx::types::Json(&session.environment))
         .bind(&session.input)
         .bind(status_str(&session.status))
+        .bind(&session.parent_session_id)
         .bind(session.created_at)
         .bind(session.updated_at)
         .execute(&self.pool)
@@ -105,6 +279,9 @@ impl SessionRepository for PostgresSessionRepository {
                 error,
                 outcome as "outcome: _",
                 cancel_requested,
+                parent_session_id,
+                pr_status as "pr_status: _",
+                pr_sync_failures,
                 created_at,
                 updated_at
             FROM sessions
@@ -136,6 +313,9 @@ impl SessionRepository for PostgresSessionRepository {
                 error,
                 outcome as "outcome: _",
                 cancel_requested,
+                parent_session_id,
+                pr_status as "pr_status: _",
+                pr_sync_failures,
                 created_at,
                 updated_at
             FROM sessions
@@ -225,6 +405,9 @@ impl SessionRepository for PostgresSessionRepository {
                 error,
                 outcome as "outcome: _",
                 cancel_requested,
+                parent_session_id,
+                pr_status as "pr_status: _",
+                pr_sync_failures,
                 created_at,
                 updated_at
             "#,
@@ -330,6 +513,9 @@ impl SessionRepository for PostgresSessionRepository {
                 error,
                 outcome as "outcome: _",
                 cancel_requested,
+                parent_session_id,
+                pr_status as "pr_status: _",
+                pr_sync_failures,
                 created_at,
                 updated_at
             "#,
@@ -370,6 +556,9 @@ impl SessionRepository for PostgresSessionRepository {
                 error,
                 outcome as "outcome: _",
                 cancel_requested,
+                parent_session_id,
+                pr_status as "pr_status: _",
+                pr_sync_failures,
                 created_at,
                 updated_at
             "#,
