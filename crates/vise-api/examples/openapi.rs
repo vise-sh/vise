@@ -52,9 +52,7 @@ fn normalize_openapi(value: &mut Value) {
                     if let Some(reference) = variant.get("$ref") {
                         map.insert(
                             "allOf".to_string(),
-                            Value::Array(vec![
-                                serde_json::json!({ "$ref": reference.clone() }),
-                            ]),
+                            Value::Array(vec![serde_json::json!({ "$ref": reference.clone() })]),
                         );
                         if let Some(description) = variant.get("description") {
                             map.insert("description".to_string(), description.clone());

@@ -1,0 +1,57 @@
+# release-plz configuration. See https://release-plz.dev/docs/config
+#
+# Release flow:
+#   1. Every push to `main` runs `release-plz release-pr`, which keeps a single
+#      "chore: release" PR open with version bumps and CHANGELOG.md entries
+#      derived from Conventional Commits.
+#   2. Merging that PR runs `release-plz release`, which pushes a `vX.Y.Z` tag.
+#   3. The tag push triggers .github/workflows/release.yml (cargo-dist), which
+#      builds the vise-cli archives and creates the GitHub release, using the
+#      matching CHANGELOG.md section as the release notes.
+#
+# release-plz therefore tags but does not create GitHub releases itself
+# (git_release_enable = false); dist would otherwise fail on the duplicate.
+
+[workspace]
+# All crates share `[workspace.package].version`, so they are bumped together
+# and a single changelog at the repository root describes the release.
+changelog_path = "./CHANGELOG.md"
+changelog_update = true
+git_tag_enable = false
+git_release_enable = false
+# Do not `cargo update` the lockfile as part of the release PR; Dependabot
+# owns dependency bumps.
+dependencies_update = false
+pr_labels = ["release"]
+# Nothing is published to crates.io yet. Flip to `true` (and add a
+# CARGO_REGISTRY_TOKEN secret) once the crates are ready for crates.io;
+# crates with `publish = false` in their Cargo.toml stay excluded regardless.
+publish = false
+# cargo-semver-checks needs published baselines to compare against; enable
+# together with `publish`.
+semver_check = false
+
+# vise-cli is the "release anchor": it owns the tag. One unified `vX.Y.Z` tag
+# selects every dist-managed package at that version.
+[[package]]
+name = "vise-cli"
+git_tag_enable = true
+git_tag_name = "v{{ version }}"
+
+# The other crates are versioned in lockstep but do not get their own tags or
+# changelog sections; their commits roll into the root changelog via vise-cli.
+[[package]]
+name = "vise-api"
+changelog_update = false
+[[package]]
+name = "vise-client"
+changelog_update = false
+[[package]]
+name = "vise-core"
+changelog_update = false
+[[package]]
+name = "vise-host"
+changelog_update = false
+[[package]]
+name = "vise-server"
+changelog_update = false

@@ -1,8 +1,15 @@
 [package]
 name = "vise-client"
-version = "0.1.0"
-edition = "2024"
-license = "SPECIFY A LICENSE BEFORE PUBLISHING"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+# Generated at build time from ../../openapi/openapi.json, which is outside the
+# crate; it cannot be packaged for crates.io as-is.
+publish = false
+
+[lints]
+workspace = true
 
 [dependencies]
 bytes = "1.9"

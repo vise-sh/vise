@@ -99,8 +99,7 @@ impl SessionRuntime for AcpProcessRuntime {
             .on_receive_notification(
                 async move |notification: SessionNotification, _cx| {
                     // Stored verbatim: ACP does the event modeling, vise doesn't.
-                    let payload =
-                        serde_json::to_value(&notification).map_err(internal_error)?;
+                    let payload = serde_json::to_value(&notification).map_err(internal_error)?;
 
                     notification_events
                         .send(payload)
@@ -220,7 +219,10 @@ mod tests {
     #[test]
     fn resolve_command_plain_without_token() {
         let command = resolve_command("claude-code", None).unwrap();
-        assert_eq!(command, "npx -y @agentclientprotocol/claude-agent-acp@latest");
+        assert_eq!(
+            command,
+            "npx -y @agentclientprotocol/claude-agent-acp@latest"
+        );
     }
 
     #[test]
@@ -230,7 +232,10 @@ mod tests {
 
     #[test]
     fn redact_strips_secret() {
-        let text = redact("boom: env GH_TOKEN=sekrit npx failed".into(), Some("sekrit"));
+        let text = redact(
+            "boom: env GH_TOKEN=sekrit npx failed".into(),
+            Some("sekrit"),
+        );
         assert!(!text.contains("sekrit"));
         assert!(text.contains("[redacted]"));
     }

@@ -1,2 +1,5 @@
 /target
 .env
+# `just coverage` output
+lcov.info
+.sqlx/

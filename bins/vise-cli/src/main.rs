@@ -209,7 +209,10 @@ async fn main() -> anyhow::Result<()> {
 
                 println!("{}", serde_json::to_string_pretty(&enrolled.host)?);
                 eprintln!("\ntoken (shown once — save it):\n{}", enrolled.token);
-                eprintln!("\nrun the host with:\n  VISE_HOST_TOKEN={} cargo run -p vise-host", enrolled.token);
+                eprintln!(
+                    "\nrun the host with:\n  VISE_HOST_TOKEN={} cargo run -p vise-host",
+                    enrolled.token
+                );
             }
         },
     }

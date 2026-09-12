@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/vise-sh/vise/discussions
+    about: Ask usage questions, share what you are building, or float an idea before it becomes a feature request.
+  - name: Security vulnerability
+    url: https://github.com/vise-sh/vise/security/advisories/new
+    about: Report a vulnerability privately. Please do not open a public issue for security problems.
