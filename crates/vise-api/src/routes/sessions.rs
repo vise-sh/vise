@@ -23,6 +23,7 @@ pub fn routes() -> Router<AppState> {
         // Not in the OpenAPI doc: progenitor can't model SSE responses.
         .route("/sessions/{id}/events/stream", get(stream_events))
         .route("/sessions/{id}/cancel", post(cancel_session))
+        .route("/sessions/{id}/follow-up", post(follow_up_session))
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -36,6 +37,16 @@ pub struct CreateSessionRequest {
     pub agent: vise_core::sessions::model::Agent,
     pub environment: vise_core::sessions::model::Environment,
     pub input: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToSchema)]
+pub struct FollowUpRequest {
+    /// Extra guidance for the agent, appended after the review feedback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+    /// Agent configuration override; defaults to the parent session's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<vise_core::sessions::model::Agent>,
 }
 
 #[utoipa::path(
@@ -122,7 +133,144 @@ pub async fn create_session(
 
     let session = state
         .sessions
-        .create(request.agent, request.environment, request.input)
+        .create(request.agent, request.environment, request.input, None)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok((StatusCode::CREATED, Json(session)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/sessions/{id}/follow-up",
+    operation_id = "follow_up_session",
+    tag = "sessions",
+    params(
+        ("id" = String, Path, description = "Session ID of the session (or follow-up) whose PR to address")
+    ),
+    request_body = FollowUpRequest,
+    responses(
+        (
+            status = 201,
+            description = "Follow-up session created, targeting the PR's head branch",
+            body = vise_core::sessions::model::Session
+        ),
+        (status = 404, description = "Session not found"),
+        (status = 409, description = "The PR is already merged or closed"),
+        (status = 422, description = "The session did not open a pull request"),
+        (status = 502, description = "GitHub could not be reached"),
+        (status = 503, description = "GitHub credential provider not configured")
+    )
+)]
+pub async fn follow_up_session(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(request): Json<FollowUpRequest>,
+) -> Result<(StatusCode, Json<vise_core::sessions::model::Session>), StatusCode> {
+    use crate::follow_up::{FollowUpContext, compose_input};
+    use crate::github::PullRef;
+    use vise_core::sessions::model::Environment;
+
+    let parent = state
+        .sessions
+        .get(&id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    // Tracking lives on the session that opened the PR; follow-ups chain to it.
+    let root = state
+        .sessions
+        .resolve_tracking_root(&id)
+        .await
+        .map_err(|error| {
+            tracing::error!(session_id = %id, %error, "follow-up root resolution failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let pr_url = root
+        .outcome
+        .as_ref()
+        .filter(|outcome| outcome.kind == "pr_opened")
+        .and_then(|outcome| outcome.pr_url.clone())
+        .ok_or(StatusCode::UNPROCESSABLE_ENTITY)?;
+    let pr = PullRef::parse(&pr_url).ok_or(StatusCode::UNPROCESSABLE_ENTITY)?;
+
+    if root
+        .pr_status
+        .as_ref()
+        .is_some_and(|status| status.state.is_terminal())
+    {
+        return Err(StatusCode::CONFLICT);
+    }
+
+    let provider = state
+        .credentials
+        .get("github")
+        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    let token = provider
+        .issue(&root)
+        .await
+        .map_err(|error| match error {
+            crate::credentials::IssueError::NotApplicable(reason) => {
+                tracing::warn!(session_id = %root.id, %reason, "github credential not applicable");
+                StatusCode::UNPROCESSABLE_ENTITY
+            }
+            crate::credentials::IssueError::Upstream(error) => {
+                tracing::error!(session_id = %root.id, %error, "github credential issue failed");
+                StatusCode::BAD_GATEWAY
+            }
+        })?
+        .secret;
+
+    let upstream = |error: crate::github::GithubError| {
+        tracing::error!(session_id = %root.id, %error, "github fetch failed");
+        StatusCode::BAD_GATEWAY
+    };
+    let pull = state.github.pull(&token, &pr).await.map_err(upstream)?;
+    if pull.merged || pull.closed {
+        return Err(StatusCode::CONFLICT);
+    }
+    let review_summaries = state
+        .github
+        .review_summaries(&token, &pr)
+        .await
+        .map_err(upstream)?;
+    let review_comments = state
+        .github
+        .review_comments(&token, &pr)
+        .await
+        .map_err(upstream)?;
+    let failing_checks: Vec<String> = state
+        .github
+        .check_runs(&token, &pr, &pull.head_sha)
+        .await
+        .map_err(upstream)?
+        .into_iter()
+        .filter(|run| run.is_failing())
+        .map(|run| run.name)
+        .collect();
+
+    let input = compose_input(&FollowUpContext {
+        pr_url: &pull.html_url,
+        head_ref: &pull.head_ref,
+        review_summaries: &review_summaries,
+        review_comments: &review_comments,
+        failing_checks: &failing_checks,
+        instructions: request.instructions.as_deref(),
+    });
+
+    let environment = Environment {
+        kind: "github_repo".to_string(),
+        repo: Some(pr.full_repo()),
+        base_branch: Some(pull.head_ref.clone()),
+    };
+    let agent = request.agent.unwrap_or_else(|| parent.agent.clone());
+
+    let session = state
+        .sessions
+        .create(agent, environment, input, Some(parent.id.clone()))
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -236,8 +384,23 @@ fn is_terminal(status: &vise_core::sessions::model::SessionStatus) -> bool {
     )
 }
 
+/// A finished session that opened a PR keeps producing `pr_state_changed` /
+/// `checks_state_changed` events until the PR merges or closes, so the tail
+/// stays open ("watch this PR to merge") until the snapshot is terminal.
+fn is_tracking_pr(session: &vise_core::sessions::model::Session) -> bool {
+    session
+        .outcome
+        .as_ref()
+        .is_some_and(|outcome| outcome.kind == "pr_opened")
+        && !session
+            .pr_status
+            .as_ref()
+            .is_some_and(|status| status.state.is_terminal())
+}
+
 /// SSE tail: replays history from `after_seq`, then polls for new events until
-/// the session reaches a terminal status, closing with a `done` event.
+/// the session reaches a terminal status (and, for sessions that opened a PR,
+/// until the PR is merged or closed), closing with a `done` event.
 pub async fn stream_events(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -277,10 +440,18 @@ pub async fn stream_events(
 
                 Ok(_) => match cursor.state.sessions.get(&cursor.id).await {
                     Ok(Some(session)) if is_terminal(&session.status) => {
+                        if is_tracking_pr(&session) {
+                            tokio::time::sleep(Duration::from_millis(1000)).await;
+                            continue;
+                        }
                         cursor.done = true;
-                        let event = Event::default()
-                            .event("done")
-                            .data(format!("{:?}", session.status).to_lowercase());
+                        let data = match session.pr_status.as_ref() {
+                            Some(status) if status.state.is_terminal() => {
+                                status.state.as_str().to_string()
+                            }
+                            _ => format!("{:?}", session.status).to_lowercase(),
+                        };
+                        let event = Event::default().event("done").data(data);
                         return Some((Ok(event), cursor));
                     }
 

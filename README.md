@@ -44,13 +44,51 @@ Use `--harness echo` to try the flow without a real agent, and
 `vise-cli` archives for macOS (arm64) and Linux (x86_64, arm64) are attached to
 every [GitHub release](https://github.com/vise-sh/vise/releases).
 
+## PR tracking and follow-up sessions
+
+A session that ends by opening a pull request does not stop being useful
+there. The server keeps polling the PR (every 60 seconds by default, see
+`VISE_PR_POLL_INTERVAL_SECS`) until it merges or closes, and records a derived
+snapshot on the session:
+
+- `pr_status.state`: `review_pending`, `changes_requested`, `approved`,
+  `merged`, `closed`, or `sync_error` when the PR became unreadable. The state
+  is reduced from GitHub's review list (latest review per reviewer wins, an
+  outstanding request for changes beats approvals, approvals on an older
+  commit are stale); raw review comments are never stored.
+- `pr_status.checks`: `pending`, `passing` or `failing`, from the check runs
+  on the head commit.
+
+Every transition is appended to the session's event stream as a
+`pr_state_changed` or `checks_state_changed` event, so `sessions watch <id>`
+on a finished session tails the PR until it merges or closes, and
+`sessions ls` / `sessions get` show the current state.
+
+When a reviewer asks for changes, spawn a follow-up:
+
+```sh
+cargo run -p vise-cli -- sessions follow-up <session-id> \
+  --instructions "keep the public API stable" --watch
+```
+
+The follow-up inherits the parent's agent configuration, is checked out on the
+PR's head branch so its pushes update the same PR, and receives the current
+review threads (with file and line context) and failing check names in its
+input, composed server-side at creation time. Its outcome is `pr_updated`;
+tracking stays with the session that opened the PR, however many follow-ups
+chain off it.
+
+The tracker and the follow-up endpoint reuse the server's GitHub App
+credential, which needs the *Pull requests: read* and *Checks: read*
+permissions in addition to the *Contents: read/write* that hosts need to push.
+
 ## Architecture
 
 The workspace is split into binaries you run and crates they share.
 
 | Path | Kind | What it is |
 |------|------|------------|
-| `bins/vise-server` | binary | HTTP API, session scheduler and lease sweeper, backed by Postgres |
+| `bins/vise-server` | binary | HTTP API, session scheduler, lease sweeper and PR tracker, backed by Postgres |
 | `bins/vise-host` | binary | Runs on a machine you enroll; claims sessions and drives the agent harness |
 | `bins/vise-cli` | binary | `vise` command-line client for sessions and hosts |
 | `crates/vise-api` | library | axum routes, request/response types, OpenAPI document |

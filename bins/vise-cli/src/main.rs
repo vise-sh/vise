@@ -4,7 +4,8 @@ use clap::{Parser, Subcommand};
 use futures::StreamExt;
 use serde_json::Value;
 use vise_client::{
-    Client as ViseClient, types::Agent, types::CreateSessionRequest, types::Environment,
+    Client as ViseClient,
+    types::{Agent, CreateSessionRequest, Environment, FollowUpRequest, Session},
 };
 
 #[derive(Parser)]
@@ -104,7 +105,8 @@ enum SessionsCommand {
         session: String,
     },
 
-    /// Live-tail a session's events
+    /// Live-tail a session's events. On a finished session that opened a PR,
+    /// keeps tailing PR review/check state until the PR merges or closes.
     Watch {
         /// Session ID
         session: String,
@@ -112,6 +114,20 @@ enum SessionsCommand {
         /// Replay from this sequence number (0 = full history)
         #[arg(long, default_value_t = 0)]
         after_seq: i64,
+    },
+
+    /// Spawn a follow-up session that addresses review feedback on a session's PR
+    FollowUp {
+        /// Session ID of the session (or an earlier follow-up) whose PR to address
+        session: String,
+
+        /// Extra guidance for the agent, appended after the review feedback
+        #[arg(long)]
+        instructions: Option<String>,
+
+        /// Watch the follow-up after creating it
+        #[arg(long)]
+        watch: bool,
     },
 }
 
@@ -125,12 +141,13 @@ async fn main() -> anyhow::Result<()> {
         Command::Sessions { command } => match command {
             SessionsCommand::Ls => {
                 let sessions = client.list_sessions().await?.into_inner();
-                println!("{}", serde_json::to_string_pretty(&sessions)?);
+                render_session_table(&sessions.sessions);
             }
 
             SessionsCommand::Get { session } => {
                 let session = client.get_session(&session).await?.into_inner();
                 println!("{}", serde_json::to_string_pretty(&session)?);
+                render_pr_summary(&session);
             }
 
             SessionsCommand::Create {
@@ -193,6 +210,30 @@ async fn main() -> anyhow::Result<()> {
             SessionsCommand::Watch { session, after_seq } => {
                 watch_session(&client, &cli.url, &session, after_seq).await?;
             }
+
+            SessionsCommand::FollowUp {
+                session,
+                instructions,
+                watch,
+            } => {
+                let created = client
+                    .follow_up_session(
+                        &session,
+                        &FollowUpRequest {
+                            instructions,
+                            agent: None,
+                        },
+                    )
+                    .await?
+                    .into_inner();
+
+                if watch {
+                    eprintln!("created follow-up {} (parent {session})", created.id);
+                    watch_session(&client, &cli.url, &created.id, 0).await?;
+                } else {
+                    println!("{}", serde_json::to_string_pretty(&created)?);
+                }
+            }
         },
 
         Command::Hosts { command } => match command {
@@ -246,9 +287,14 @@ async fn watch_session(
     println!();
 
     let session = client.get_session(session_id).await?.into_inner();
-    if let Some(outcome) = session.outcome {
-        match (outcome.kind.as_str(), outcome.pr_url, outcome.branch) {
+    if let Some(outcome) = &session.outcome {
+        match (
+            outcome.kind.as_str(),
+            outcome.pr_url.as_deref(),
+            outcome.branch.as_deref(),
+        ) {
             ("pr_opened", Some(url), _) => println!("PR: {url}"),
+            ("pr_updated", Some(url), _) => println!("PR updated: {url}"),
             ("pushed_no_pr", _, Some(branch)) => println!("pushed branch {branch} (no PR)"),
             ("uncommitted_changes", _, _) => {
                 println!("warning: agent left uncommitted work; workspace kept on host")
@@ -257,8 +303,71 @@ async fn watch_session(
             _ => {}
         }
     }
+    render_pr_summary(&session);
+    if let Some(parent) = &session.parent_session_id {
+        println!("PR tracking continues on the root session (parent: {parent})");
+    }
 
     Ok(())
+}
+
+fn pr_state_columns(session: &Session) -> (String, String) {
+    match &session.pr_status {
+        Some(status) => (
+            status.state.to_string(),
+            status
+                .checks
+                .as_ref()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "-".to_string()),
+        ),
+        None => ("-".to_string(), "-".to_string()),
+    }
+}
+
+fn render_session_table(sessions: &[Session]) {
+    println!(
+        "{:<32} {:<10} {:<20} {:<18} {:<8} CREATED",
+        "ID", "STATUS", "OUTCOME", "PR", "CHECKS"
+    );
+    for session in sessions {
+        let outcome = session
+            .outcome
+            .as_ref()
+            .map(|o| o.kind.clone())
+            .unwrap_or_else(|| "-".to_string());
+        let (pr, checks) = pr_state_columns(session);
+        println!(
+            "{:<32} {:<10} {:<20} {:<18} {:<8} {}",
+            session.id,
+            session.status,
+            outcome,
+            pr,
+            checks,
+            session
+                .created_at
+                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+        );
+    }
+}
+
+/// One line describing the PR tracking snapshot, when there is one.
+fn render_pr_summary(session: &Session) {
+    let Some(status) = &session.pr_status else {
+        return;
+    };
+    let url = session
+        .outcome
+        .as_ref()
+        .and_then(|o| o.pr_url.as_deref())
+        .unwrap_or("-");
+    let (state, checks) = pr_state_columns(session);
+    println!(
+        "PR {url}: {state}, checks {checks} (synced {})",
+        status
+            .last_synced_at
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    );
 }
 
 fn render_sse_event(raw: &str) {
@@ -275,7 +384,10 @@ fn render_sse_event(raw: &str) {
     }
 
     if event_name == "done" {
-        println!("\n── session {data} ──");
+        match data.as_str() {
+            "merged" | "closed" => println!("\n── pr {data} ──"),
+            _ => println!("\n── session {data} ──"),
+        }
         return;
     }
 
@@ -297,6 +409,18 @@ fn render_payload(payload: &Value) {
 
     if payload["permissionRequest"].is_object() {
         println!("\n[permission auto-approved]");
+        return;
+    }
+
+    // Server-side PR tracking transitions on finished sessions.
+    if let Some(kind) = payload["type"].as_str() {
+        let from = payload["from"].as_str().unwrap_or("unknown");
+        let to = payload["to"].as_str().unwrap_or("none");
+        match kind {
+            "pr_state_changed" => println!("\n[pr] {from} -> {to}"),
+            "checks_state_changed" => println!("\n[checks] {from} -> {to}"),
+            other => println!("\n[{other}]"),
+        }
         return;
     }
 

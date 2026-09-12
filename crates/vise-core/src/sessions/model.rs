@@ -50,12 +50,79 @@ impl Environment {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SessionOutcome {
-    /// "pr_opened" | "pushed_no_pr" | "uncommitted_changes" | "no_changes"
+    /// "pr_opened" | "pr_updated" | "pushed_no_pr" | "uncommitted_changes" | "no_changes"
+    ///
+    /// `pr_updated` is reported by follow-up sessions that pushed to the
+    /// existing branch of a PR opened by an ancestor session.
     pub kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pr_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
+}
+
+/// Derived review state of a session's pull request. Reduced from GitHub's
+/// review list (see `pr_tracking::reduce`); raw reviews are never stored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PrState {
+    ReviewPending,
+    ChangesRequested,
+    Approved,
+    Merged,
+    Closed,
+    /// The poller could not read the PR (persistent 403/404). Retried on
+    /// every tick; clears once a fetch succeeds.
+    SyncError,
+}
+
+impl PrState {
+    /// Merged and closed PRs leave the poller's work list forever.
+    pub fn is_terminal(self) -> bool {
+        matches!(self, PrState::Merged | PrState::Closed)
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PrState::ReviewPending => "review_pending",
+            PrState::ChangesRequested => "changes_requested",
+            PrState::Approved => "approved",
+            PrState::Merged => "merged",
+            PrState::Closed => "closed",
+            PrState::SyncError => "sync_error",
+        }
+    }
+}
+
+/// Derived state of the check runs on the PR's head commit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ChecksState {
+    Pending,
+    Passing,
+    Failing,
+}
+
+impl ChecksState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ChecksState::Pending => "pending",
+            ChecksState::Passing => "passing",
+            ChecksState::Failing => "failing",
+        }
+    }
+}
+
+/// Snapshot of what the PR looks like right now. Transitions between
+/// snapshots are appended to the session's event stream as
+/// `pr_state_changed` / `checks_state_changed` events.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct PrStatus {
+    pub state: PrState,
+    /// None when the head commit has no check runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checks: Option<ChecksState>,
+    pub last_synced_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -79,6 +146,14 @@ pub struct Session {
     pub stop_reason: Option<String>,
     pub error: Option<String>,
     pub outcome: Option<SessionOutcome>,
+    /// PR tracking snapshot; only present once the poller has synced a
+    /// session whose outcome is `pr_opened`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr_status: Option<PrStatus>,
+    /// Set on follow-up sessions: the session whose PR this one addresses.
+    /// Follow-ups chain; PR tracking always lives on the root session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
     pub cancel_requested: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

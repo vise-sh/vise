@@ -9,6 +9,7 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+chrono = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true }
