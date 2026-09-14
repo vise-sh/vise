@@ -9,7 +9,7 @@ default:
 # ---------------------------------------------------------------------------
 
 # Run every check CI runs: formatting, lints, tests, OpenAPI spec.
-check: fmt-check lint test spec-check
+check: fmt-check lint test sqlx-check spec-check
 
 # Format all crates in place.
 fmt:
@@ -51,6 +51,10 @@ coverage:
 sqlx-prepare:
     cargo sqlx prepare --workspace
 
+# Build the vise-server container image for this machine's architecture.
+docker-build:
+    docker build -t vise-server .
+
 # Fail if `.sqlx/` is stale relative to the code and live database schema.
 sqlx-check:
     cargo sqlx prepare --check --workspace
@@ -82,6 +86,9 @@ db-reset:
     docker compose down -v
     docker compose up -d postgres
 
+# Apply migrations with sqlx-cli. vise-server also applies them itself on
+# startup; this is for the query macros, sqlx-prepare and tests, which need
+# the schema before the server runs.
 db-migrate:
     sqlx migrate run --source crates/vise-core/migrations
 
