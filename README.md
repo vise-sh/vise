@@ -14,7 +14,64 @@ from the CLI. The API is documented with OpenAPI and the Rust client is
 generated from that spec, so the CLI, the host and any integration you write
 all speak the same contract.
 
-## Quickstart
+## Install
+
+One line stands up the whole stack on a macOS (Apple Silicon) or Linux
+(x86_64, arm64) machine that has Docker and git:
+
+```sh
+curl -fsSL https://vise.sh/install | sh
+```
+
+`vise.sh/install` serves [`scripts/install.sh`](scripts/install.sh) from this
+repository. Without sudo, it:
+
+1. checks for `docker` (with the compose plugin) and `git`, and warns if
+   `claude` (Claude Code) is missing: the `claude-code` harness needs it, the
+   `echo` harness does not;
+2. asks for a GitHub personal access token (or reads `VISE_GITHUB_PAT`) and
+   writes `~/.vise/.env` plus a `~/.vise/docker-compose.yml` that runs Postgres
+   and `ghcr.io/vise-sh/vise-server`;
+3. runs `docker compose up -d` and waits for the API on `http://localhost:3000`;
+4. downloads the `vise-cli` and `vise-host` archives from the latest
+   [GitHub release](https://github.com/vise-sh/vise/releases) into
+   `~/.vise/bin` (add it to your `PATH`);
+5. enrolls this machine as a host and starts `vise-host` in the background.
+
+It is safe to re-run: an existing `~/.vise/.env` is kept unless you say
+otherwise, and the binaries and server image are upgraded in place. Set
+`VISE_VERSION=v0.2.0` to pin a release, `VISE_PORT` to move the API, or
+`VISE_HOME` to install somewhere other than `~/.vise`; the header of the script
+lists every override. Then:
+
+```sh
+vise sessions create "add a --json flag to the ls command" --repo owner/repo --watch
+```
+
+The host on this machine is a plain background process, managed with
+`vise host`:
+
+```sh
+vise host status      # running / not running (exit 1 when stopped)
+vise host logs -f     # tail ~/.vise/logs/host.log
+vise host stop        # SIGTERM via ~/.vise/host.pid
+vise host start       # reads VISE_HOST_TOKEN and VISE_URL from ~/.vise/.env
+```
+
+`vise host start -- --keep-workspaces` passes extra flags through to
+`vise-host`. Server logs are at `docker compose -f ~/.vise/docker-compose.yml logs -f`.
+
+### Uninstall
+
+```sh
+vise host stop
+docker compose -f ~/.vise/docker-compose.yml down -v   # containers and the Postgres volume
+rm -rf ~/.vise
+```
+
+and remove the `~/.vise/bin` line from your shell profile.
+
+## Quickstart from source
 
 Every release ships the server as a container image,
 `ghcr.io/vise-sh/vise-server` (linux/amd64 and linux/arm64, tagged with the
@@ -50,6 +107,10 @@ binaries or `cargo run -p ...` interchangeably):
 vise-cli hosts create laptop
 VISE_HOST_TOKEN=<token> vise-host
 ```
+
+(`cargo run -p vise-cli -- host start --bin target/debug/vise-host` runs the
+same thing in the background, with the token taken from `VISE_HOST_TOKEN` or
+`~/.vise/.env`.)
 
 Then create a session and watch it run:
 
@@ -130,7 +191,7 @@ The workspace is split into binaries you run and crates they share.
 |------|------|------------|
 | `bins/vise-server` | binary | HTTP API, session scheduler, lease sweeper and PR tracker, backed by Postgres |
 | `bins/vise-host` | binary | Runs on a machine you enroll; claims sessions and drives the agent harness |
-| `bins/vise-cli` | binary | `vise` command-line client for sessions and hosts |
+| `bins/vise-cli` | binary | `vise` command-line client for sessions and hosts, and the `vise host` supervisor for the local host process |
 | `crates/vise-api` | library | axum routes, request/response types, OpenAPI document |
 | `crates/vise-core` | library | Domain model, session state machine, sqlx repositories and migrations (embedded, applied by the server on startup) |
 | `crates/vise-client` | library | Rust client generated at build time from `openapi/openapi.json` |

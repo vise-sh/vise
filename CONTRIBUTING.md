@@ -16,6 +16,7 @@ locally before you push saves a round trip.
 | [typos](https://github.com/crate-ci/typos) | Spell-check (optional locally; CI runs it) | `cargo install typos-cli` |
 | [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov) | Coverage report (optional locally) | `cargo install cargo-llvm-cov` |
 | [cargo-watch](https://github.com/watchexec/cargo-watch) | `just run-server` / `just run-host` (optional) | `cargo install cargo-watch` |
+| [shellcheck](https://www.shellcheck.net) | Lints `scripts/*.sh` (optional locally; CI runs it) | `brew install shellcheck` / `apt install shellcheck` |
 
 ## First-time setup
 
@@ -50,9 +51,9 @@ That expands to:
 | `just sqlx-check` | The committed `.sqlx/` query cache matches the code and DB schema |
 | `just spec-check` | The committed `openapi/openapi.json` matches what `vise-api` generates |
 
-`just audit` (cargo-deny advisories and licenses), `just typos` and
-`just coverage` also run in CI but are not part of `just check` because they
-need network access or an extra tool. Coverage is reported to Codecov for
+`just audit` (cargo-deny advisories and licenses), `just typos`,
+`just shellcheck` and `just coverage` also run in CI but are not part of
+`just check` because they need network access or an extra tool. Coverage is reported to Codecov for
 information only; a drop in coverage never blocks a merge.
 
 ## Formatting
@@ -176,6 +177,7 @@ git add openapi/openapi.json
 | sqlx query cache up to date | `just db-migrate && just sqlx-check` against a Postgres 17 service |
 | cargo deny advisories + licenses | `cargo deny check advisories licenses` |
 | typos | `typos` |
+| shellcheck | `just shellcheck` on `scripts/*.sh` (including the installer) |
 | coverage | `cargo llvm-cov --workspace --lcov`, uploaded to Codecov |
 
 All jobs except `sqlx query cache up to date` build with `SQLX_OFFLINE=true`,
@@ -193,8 +195,9 @@ Releases are automated; you should never bump a version by hand.
    corresponding `CHANGELOG.md` entries.
 2. Merging that PR tags the commit `vX.Y.Z`.
 3. The tag triggers [cargo-dist](https://opensource.axo.dev/cargo-dist/), which
-   builds `vise-cli` archives for macOS (arm64) and Linux (x86_64, arm64) and
-   attaches them to a GitHub release whose notes are the changelog section.
+   builds `vise-cli` and `vise-host` archives for macOS (arm64) and Linux
+   (x86_64, arm64) and attaches them to a GitHub release whose notes are the
+   changelog section. `scripts/install.sh` downloads these archives.
 
 All crates share the workspace version, so one tag covers everything.
 `vise-client`, `vise-server` and `vise-host` are marked `publish = false`;

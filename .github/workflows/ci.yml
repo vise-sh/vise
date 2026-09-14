@@ -188,6 +188,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: crate-ci/typos@v1
 
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # shellcheck is preinstalled on the ubuntu runner images.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - run: just shellcheck
+
   coverage:
     name: coverage
     runs-on: ubuntu-latest
