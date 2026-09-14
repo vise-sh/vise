@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO session_events (session_id, seq, payload)\n            SELECT $1, seq, payload\n            FROM UNNEST($2::bigint[], $3::jsonb[]) AS t(seq, payload)\n            ON CONFLICT DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8Array",
+        "JsonbArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cea1a106194759897b8967f405194f9fad66eb2624f1c14b6dc4dc5036f93fbb"
+}

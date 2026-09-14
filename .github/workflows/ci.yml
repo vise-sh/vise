@@ -123,6 +123,55 @@ jobs:
       - run: just db-migrate
       - run: just spec-check
 
+  sqlx-cache:
+    name: sqlx query cache up to date
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vise
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vise"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/vise
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,cargo-binstall
+      - name: Install sqlx-cli
+        run: cargo binstall --no-confirm --locked sqlx-cli@0.9.0
+      - run: just db-migrate
+      - run: just sqlx-check
+
+  # Build-only check of the vise-server image for both platforms the release
+  # publishes (publish-docker.yml pushes the real thing on tags). Compiles
+  # against the committed .sqlx/ cache, so it also catches a build that would
+  # only work with a live database.
+  docker:
+    name: docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   audit:
     name: cargo deny advisories + licenses
     runs-on: ubuntu-latest

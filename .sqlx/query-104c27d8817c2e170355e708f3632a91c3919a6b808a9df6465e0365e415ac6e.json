@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE sessions\n            SET status = 'failed',\n                error = 'lease expired',\n                lease_expires_at = NULL,\n                finished_at = now(),\n                updated_at = now()\n            WHERE status = 'running' AND lease_expires_at < now()\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "104c27d8817c2e170355e708f3632a91c3919a6b808a9df6465e0365e415ac6e"
+}
