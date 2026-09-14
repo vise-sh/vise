@@ -6,8 +6,9 @@
 #      derived from Conventional Commits.
 #   2. Merging that PR runs `release-plz release`, which pushes a `vX.Y.Z` tag.
 #   3. The tag push triggers .github/workflows/release.yml (cargo-dist), which
-#      builds the vise-cli archives and creates the GitHub release, using the
-#      matching CHANGELOG.md section as the release notes.
+#      builds the vise-cli and vise-host archives, creates the GitHub release
+#      using the matching CHANGELOG.md section as the release notes, and then
+#      publishes the vise-server container image (publish-docker.yml).
 #
 # release-plz therefore tags but does not create GitHub releases itself
 # (git_release_enable = false); dist would otherwise fail on the duplicate.

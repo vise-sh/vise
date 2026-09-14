@@ -1,0 +1,17 @@
+# Only what `cargo build -p vise-server` needs goes into the build context.
+# openapi/ and .sqlx/ must stay: vise-client is generated from the spec and the
+# sqlx macros compile against the offline query cache.
+target
+.git
+.github
+.githooks
+.env
+lcov.info
+docs
+scripts
+Dockerfile
+docker-compose*.yml
+# The image pins its own toolchain (RUST_VERSION in the Dockerfile). Left in,
+# this file would make rustup download `stable` at build time, without the
+# cross-compilation target installed.
+rust-toolchain.toml

@@ -1,0 +1,13 @@
+# Overlay for GitHub App authentication: mounts the App's private key from
+# VISE_GITHUB_APP_PRIVATE_KEY_PATH (a path on this machine, as in .env) into
+# the vise-server container and points the server at it.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.github-app.yml up -d
+#
+# PAT users do not need this file.
+services:
+  vise-server:
+    environment:
+      VISE_GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/vise-github-app.pem
+    volumes:
+      - ${VISE_GITHUB_APP_PRIVATE_KEY_PATH:?set VISE_GITHUB_APP_PRIVATE_KEY_PATH to the App private key on this machine}:/run/secrets/vise-github-app.pem:ro
