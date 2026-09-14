@@ -1,4 +1,7 @@
+mod host;
+
 use std::io::Write;
+use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use futures::StreamExt;
@@ -13,9 +16,10 @@ use vise_client::{
 #[command(version)]
 #[command(about = "CLI for Vise")]
 struct Cli {
-    /// URL of the Vise API
-    #[arg(short, long, default_value = "http://localhost:3000")]
-    url: String,
+    /// URL of the Vise API. Falls back to VISE_URL in ~/.vise/.env, then
+    /// http://localhost:3000.
+    #[arg(short, long, env = "VISE_URL")]
+    url: Option<String>,
 
     #[command(subcommand)]
     command: Command,
@@ -29,10 +33,51 @@ enum Command {
         command: SessionsCommand,
     },
 
-    /// Manage hosts
+    /// Manage enrolled hosts on the server
     Hosts {
         #[command(subcommand)]
         command: HostsCommand,
+    },
+
+    /// Run the vise-host process on this machine (state under ~/.vise)
+    Host {
+        #[command(subcommand)]
+        command: HostCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum HostCommand {
+    /// Start vise-host in the background (pidfile ~/.vise/host.pid, log ~/.vise/logs/host.log)
+    Start {
+        /// Path to the vise-host binary (default: next to vise, ~/.vise/bin, then PATH)
+        #[arg(long, env = "VISE_HOST_BIN")]
+        bin: Option<PathBuf>,
+
+        /// Host bearer token (default: VISE_HOST_TOKEN in ~/.vise/.env)
+        #[arg(long, env = "VISE_HOST_TOKEN", hide_env_values = true)]
+        token: Option<String>,
+
+        /// Extra arguments passed to vise-host, e.g. `-- --keep-workspaces`
+        #[arg(last = true)]
+        args: Vec<String>,
+    },
+
+    /// Stop the running vise-host (SIGTERM, then SIGKILL after 10s)
+    Stop,
+
+    /// Report whether vise-host is running; exits 1 when it is not
+    Status,
+
+    /// Print the tail of the host log
+    Logs {
+        /// Number of lines to show
+        #[arg(short = 'n', long, default_value_t = 50)]
+        lines: usize,
+
+        /// Keep printing new log output (Ctrl-C to stop)
+        #[arg(short, long)]
+        follow: bool,
     },
 }
 
@@ -45,6 +90,10 @@ enum HostsCommand {
     Create {
         /// Host name
         name: String,
+
+        /// Print only the token on stdout (for scripts)
+        #[arg(long)]
+        token_only: bool,
     },
 }
 
@@ -135,7 +184,9 @@ enum SessionsCommand {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    let client = ViseClient::new(&cli.url);
+    let paths = host::Paths::from_env()?;
+    let url = host::resolve_url(cli.url.as_deref(), &host::load_env(&paths)?);
+    let client = ViseClient::new(&url);
 
     match cli.command {
         Command::Sessions { command } => match command {
@@ -188,7 +239,7 @@ async fn main() -> anyhow::Result<()> {
 
                 if watch {
                     eprintln!("created {}", session.id);
-                    watch_session(&client, &cli.url, &session.id, 0).await?;
+                    watch_session(&client, &url, &session.id, 0).await?;
                 } else {
                     println!("{}", serde_json::to_string_pretty(&session)?);
                 }
@@ -208,7 +259,7 @@ async fn main() -> anyhow::Result<()> {
             }
 
             SessionsCommand::Watch { session, after_seq } => {
-                watch_session(&client, &cli.url, &session, after_seq).await?;
+                watch_session(&client, &url, &session, after_seq).await?;
             }
 
             SessionsCommand::FollowUp {
@@ -229,7 +280,7 @@ async fn main() -> anyhow::Result<()> {
 
                 if watch {
                     eprintln!("created follow-up {} (parent {session})", created.id);
-                    watch_session(&client, &cli.url, &created.id, 0).await?;
+                    watch_session(&client, &url, &created.id, 0).await?;
                 } else {
                     println!("{}", serde_json::to_string_pretty(&created)?);
                 }
@@ -242,19 +293,49 @@ async fn main() -> anyhow::Result<()> {
                 println!("{}", serde_json::to_string_pretty(&hosts)?);
             }
 
-            HostsCommand::Create { name } => {
+            HostsCommand::Create { name, token_only } => {
                 let enrolled = client
                     .enroll_host(&vise_client::types::EnrollHostRequest { name })
                     .await?
                     .into_inner();
 
+                if token_only {
+                    println!("{}", enrolled.token);
+                    return Ok(());
+                }
+
                 println!("{}", serde_json::to_string_pretty(&enrolled.host)?);
                 eprintln!("\ntoken (shown once — save it):\n{}", enrolled.token);
                 eprintln!(
-                    "\nrun the host with:\n  VISE_HOST_TOKEN={} cargo run -p vise-host",
-                    enrolled.token
+                    "\nrun the host with:\n  VISE_HOST_TOKEN={} vise host start\n\
+                     or, from a checkout:\n  VISE_HOST_TOKEN={} cargo run -p vise-host",
+                    enrolled.token, enrolled.token
                 );
             }
+        },
+
+        Command::Host { command } => match command {
+            HostCommand::Start { bin, token, args } => {
+                host::start(
+                    &paths,
+                    host::StartOptions {
+                        binary: bin,
+                        token,
+                        url: cli.url,
+                        extra_args: args,
+                    },
+                )?;
+            }
+
+            HostCommand::Stop => host::stop(&paths)?,
+
+            HostCommand::Status => {
+                if !host::status(&paths)? {
+                    std::process::exit(1);
+                }
+            }
+
+            HostCommand::Logs { lines, follow } => host::logs(&paths, lines, follow)?,
         },
     }
 
