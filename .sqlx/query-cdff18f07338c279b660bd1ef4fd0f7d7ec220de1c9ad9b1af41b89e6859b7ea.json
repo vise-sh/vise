@@ -1,0 +1,220 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                agent as \"agent: _\",\n                environment as \"environment: _\",\n                input,\n                status,\n                host_id,\n                lease_expires_at,\n                started_at,\n                finished_at,\n                stop_reason,\n                error,\n                outcome as \"outcome: _\",\n                pr_status as \"pr_status: _\",\n                parent_session_id,\n                cancel_requested,\n                created_at,\n                updated_at\n            FROM sessions\n            WHERE outcome ->> 'kind' = 'pr_opened'\n              AND (pr_status IS NULL OR pr_status ->> 'state' NOT IN ('merged', 'closed'))\n            ORDER BY pr_status ->> 'last_synced_at' NULLS FIRST, created_at\n            LIMIT $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "agent: _",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "agent"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "environment: _",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "environment"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "input",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "input"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "host_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "host_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "lease_expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "lease_expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "started_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "started_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "finished_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "finished_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "stop_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "stop_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "error"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "outcome: _",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "outcome"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "pr_status: _",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "pr_status"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "parent_session_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "parent_session_id"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "cancel_requested",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "cancel_requested"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "cdff18f07338c279b660bd1ef4fd0f7d7ec220de1c9ad9b1af41b89e6859b7ea"
+}

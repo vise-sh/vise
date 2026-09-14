@@ -22,6 +22,13 @@ async fn main() -> anyhow::Result<()> {
         .connect(&database_url)
         .await?;
 
+    // Apply pending schema migrations before serving. The migrations are
+    // embedded in vise-core, so a container or release binary needs no
+    // sqlx-cli; `just db-migrate` keeps working because both write the same
+    // `_sqlx_migrations` table.
+    vise_core::MIGRATOR.run(&pool).await?;
+    tracing::info!("database migrations applied");
+
     let sessions = Arc::new(SessionService::new(PostgresSessionRepository::new(
         pool.clone(),
     )));

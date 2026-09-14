@@ -16,33 +16,50 @@ all speak the same contract.
 
 ## Quickstart
 
-You need Rust (stable), Docker and [just](https://github.com/casey/just).
+Every release ships the server as a container image,
+`ghcr.io/vise-sh/vise-server` (linux/amd64 and linux/arm64, tagged with the
+version and `latest`), plus `vise-cli` and `vise-host` archives for macOS
+(arm64) and Linux (x86_64, arm64) on the
+[releases page](https://github.com/vise-sh/vise/releases). With those you
+need Docker and nothing else; the server applies its own database migrations
+on startup.
 
 ```sh
 git clone https://github.com/vise-sh/vise && cd vise
-cp .env.example .env          # DATABASE_URL for the server and sqlx
-just db-up && just db-migrate # Postgres 17 in Docker, then apply migrations
-cargo run -p vise-server      # API on http://localhost:3000 (Swagger UI at /docs)
+cp .env.example .env     # set VISE_GITHUB_PAT (or the App settings, see below)
+docker compose up -d     # Postgres 17 + vise-server on http://localhost:3000
 ```
 
-In a second terminal, enroll a host and start it with the token that is printed:
+Swagger UI is at `/docs`. While the repository is private, the image is too:
+`docker login ghcr.io` with a token that has `read:packages` first. With a
+GitHub App instead of a PAT, add the overlay that mounts the private key:
+`docker compose -f docker-compose.yml -f docker-compose.github-app.yml up -d`.
+
+To run the server from source instead, you also need Rust (stable) and
+[just](https://github.com/casey/just):
 
 ```sh
-cargo run -p vise-cli -- hosts create laptop
-VISE_HOST_TOKEN=<token> cargo run -p vise-host
+just db-up               # Postgres only
+cargo run -p vise-server # applies migrations, then serves on :3000
+```
+
+Enroll a host and start it with the token that is printed (use the release
+binaries or `cargo run -p ...` interchangeably):
+
+```sh
+vise-cli hosts create laptop
+VISE_HOST_TOKEN=<token> vise-host
 ```
 
 Then create a session and watch it run:
 
 ```sh
-cargo run -p vise-cli -- sessions create "add a --json flag to the ls command" \
+vise-cli sessions create "add a --json flag to the ls command" \
   --repo your-org/your-repo --watch
 ```
 
 Use `--harness echo` to try the flow without a real agent, and
-`sessions ls` / `sessions events <id>` to inspect what happened. Prebuilt
-`vise-cli` archives for macOS (arm64) and Linux (x86_64, arm64) are attached to
-every [GitHub release](https://github.com/vise-sh/vise/releases).
+`sessions ls` / `sessions events <id>` to inspect what happened.
 
 ## PR tracking and follow-up sessions
 
@@ -115,7 +132,7 @@ The workspace is split into binaries you run and crates they share.
 | `bins/vise-host` | binary | Runs on a machine you enroll; claims sessions and drives the agent harness |
 | `bins/vise-cli` | binary | `vise` command-line client for sessions and hosts |
 | `crates/vise-api` | library | axum routes, request/response types, OpenAPI document |
-| `crates/vise-core` | library | Domain model, session state machine, sqlx repositories and migrations |
+| `crates/vise-core` | library | Domain model, session state machine, sqlx repositories and migrations (embedded, applied by the server on startup) |
 | `crates/vise-client` | library | Rust client generated at build time from `openapi/openapi.json` |
 
 Longer design notes live in [`docs/`](docs/).

@@ -10,7 +10,7 @@ locally before you push saves a round trip.
 |------|-----|---------|
 | Rust (stable) | Toolchain, pinned by `rust-toolchain.toml`; rustup installs `rustfmt` and `clippy` automatically | https://rustup.rs |
 | [just](https://github.com/casey/just) | Task runner; every recipe below is `just <name>` | `cargo install just` |
-| Docker | Local Postgres via `docker compose` | https://docs.docker.com/get-docker/ |
+| Docker | Local Postgres via `docker compose`; building the `vise-server` image | https://docs.docker.com/get-docker/ |
 | [sqlx-cli](https://github.com/launchbadge/sqlx/tree/main/sqlx-cli) | Migrations and the offline query cache | `cargo install sqlx-cli --no-default-features --features postgres` |
 | [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) | Dependency advisory and license audit (optional locally) | `cargo install cargo-deny` |
 | [typos](https://github.com/crate-ci/typos) | Spell-check (optional locally; CI runs it) | `cargo install typos-cli` |
@@ -22,7 +22,7 @@ locally before you push saves a round trip.
 ```sh
 cp .env.example .env        # DATABASE_URL for the server, sqlx-cli and query macros
 just db-up                  # start Postgres 17 in Docker
-just db-migrate             # apply crates/vise-core/migrations
+just db-migrate             # apply crates/vise-core/migrations (the server also does this on startup)
 just check                  # confirm everything is green before you start
 ```
 
@@ -97,7 +97,29 @@ git add .sqlx
 If you forget, `just sqlx-check` (and the `sqlx query cache up to date` CI
 job) fails. With `DATABASE_URL` set, the macros validate against your live
 database instead of the cache, so a stale cache will not show up as a local
-build error; that is exactly why the check exists.
+build error; that is exactly why the check exists. The container image is
+built with `SQLX_OFFLINE=true`, so it depends on the cache being current.
+
+## Migrations
+
+Migrations live in `crates/vise-core/migrations` and are embedded into
+`vise-core` with `sqlx::migrate!`; `vise-server` applies pending ones on
+startup, before it starts serving. `just db-migrate` (sqlx-cli) applies the
+same files and records them in the same `_sqlx_migrations` table, so use it
+whenever you need the schema without running the server: the query macros,
+`just sqlx-prepare` and the tests all do. `crates/vise-core/tests/migrations.rs`
+checks that the two stay interchangeable.
+
+## Container image
+
+`Dockerfile` builds `vise-server` into a slim Debian image; `just docker-build`
+produces one for your machine's architecture, and the `docker build` CI job
+builds linux/amd64 and linux/arm64 (the builder stage cross-compiles) on every
+pull request. On a release tag, `.github/workflows/publish-docker.yml`, called
+from the dist-generated release workflow, pushes the multi-arch image to
+`ghcr.io/vise-sh/vise-server` as `<version>` and `latest`. The Dockerfile pins
+its own Rust version (`RUST_VERSION`); bump it when the code needs a newer
+compiler.
 
 ## OpenAPI spec and the generated client
 

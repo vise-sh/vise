@@ -7,6 +7,11 @@ repository.workspace = true
 # Deployable agent runtime, not a library; distributed via GitHub releases only.
 publish = false
 
+# dist skips `publish = false` packages unless told otherwise; vise-host ships
+# as release archives next to vise-cli.
+[package.metadata.dist]
+dist = true
+
 [lints]
 workspace = true
 

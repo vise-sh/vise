@@ -14,6 +14,13 @@ installers = []
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
 # Where to host releases
 hosting = "github"
+# Extra publish step run by release.yml after the archives are built: the
+# reusable workflow .github/workflows/publish-docker.yml pushes the
+# vise-server container image to ghcr.io for the same tag.
+publish-jobs = ["./publish-docker"]
+# The default custom-publish permissions (id-token + packages) drop
+# `contents`, which actions/checkout needs on a private repository.
+github-custom-job-permissions = { "publish-docker" = { contents = "read", packages = "write" } }
 # Tags are created by release-plz (see release-plz.toml); this workflow only
 # builds on tag push, it never tags or bumps versions itself.
 

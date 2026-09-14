@@ -1,3 +1,14 @@
+# Local stack: Postgres plus the released vise-server image.
+#
+#   docker compose up -d            # Postgres + vise-server from ghcr.io
+#   just db-up                      # Postgres only (run the server with cargo)
+#
+# Compose reads `.env` from this directory for the ${...} values below, so the
+# same file that configures `cargo run -p vise-server` configures the
+# container. The server applies its own migrations on startup.
+#
+# GitHub App credentials need the private key mounted into the container;
+# add docker-compose.github-app.yml for that (see README).
 services:
   postgres:
     image: postgres:17
@@ -16,6 +27,30 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  vise-server:
+    # Published for every release; `latest` is the newest non-prerelease.
+    # Pin with VISE_SERVER_TAG=0.1.0, or build locally: `just docker-build`
+    # then VISE_SERVER_IMAGE=vise-server.
+    image: ${VISE_SERVER_IMAGE:-ghcr.io/vise-sh/vise-server}:${VISE_SERVER_TAG:-latest}
+    container_name: vise-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      # Reaches the postgres service over the compose network; the
+      # localhost URL in .env is for processes on the host.
+      DATABASE_URL: ${VISE_SERVER_DATABASE_URL:-postgres://postgres:postgres@postgres:5432/vise}
+      # GitHub credential: the App when VISE_GITHUB_APP_ID is set (key
+      # mounted by docker-compose.github-app.yml), otherwise the PAT.
+      VISE_GITHUB_APP_ID: ${VISE_GITHUB_APP_ID:-}
+      VISE_GITHUB_PAT: ${VISE_GITHUB_PAT:-}
+      VISE_GITHUB_API_BASE: ${VISE_GITHUB_API_BASE:-https://api.github.com}
+      VISE_PR_POLL_INTERVAL_SECS: ${VISE_PR_POLL_INTERVAL_SECS:-60}
+      RUST_LOG: ${RUST_LOG:-info}
 
 volumes:
   vise-postgres-data:
