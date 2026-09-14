@@ -93,7 +93,7 @@ async fn mount_feedback(server: &MockServer, number: u64) {
 #[sqlx::test(migrations = "../vise-core/migrations")]
 async fn composes_review_feedback_and_targets_the_head_branch(pool: PgPool) {
     let server = MockServer::start().await;
-    let state = app_state(pool, &server.uri(), github_credentials());
+    let state = app_state(pool, &server.uri(), pat_auth());
     let root = pr_session(&state, 17).await;
     mount_feedback(&server, 17).await;
 
@@ -152,7 +152,7 @@ async fn composes_review_feedback_and_targets_the_head_branch(pool: PgPool) {
 #[sqlx::test(migrations = "../vise-core/migrations")]
 async fn agent_override_replaces_inherited_config(pool: PgPool) {
     let server = MockServer::start().await;
-    let state = app_state(pool, &server.uri(), github_credentials());
+    let state = app_state(pool, &server.uri(), pat_auth());
     let root = pr_session(&state, 17).await;
     mount_feedback(&server, 17).await;
 
@@ -171,7 +171,7 @@ async fn agent_override_replaces_inherited_config(pool: PgPool) {
 #[sqlx::test(migrations = "../vise-core/migrations")]
 async fn follow_ups_chain_and_resolve_tracking_to_the_root(pool: PgPool) {
     let server = MockServer::start().await;
-    let state = app_state(pool, &server.uri(), github_credentials());
+    let state = app_state(pool, &server.uri(), pat_auth());
     let root = pr_session(&state, 17).await;
     mount_feedback(&server, 17).await;
 
@@ -198,7 +198,7 @@ async fn follow_ups_chain_and_resolve_tracking_to_the_root(pool: PgPool) {
 #[sqlx::test(migrations = "../vise-core/migrations")]
 async fn rejects_merged_and_closed_prs(pool: PgPool) {
     let server = MockServer::start().await;
-    let state = app_state(pool.clone(), &server.uri(), github_credentials());
+    let state = app_state(pool.clone(), &server.uri(), pat_auth());
 
     // Merged per the snapshot: rejected without touching GitHub.
     let merged = pr_session(&state, 1).await;
@@ -227,7 +227,7 @@ async fn rejects_merged_and_closed_prs(pool: PgPool) {
 #[sqlx::test(migrations = "../vise-core/migrations")]
 async fn rejects_sessions_without_a_pr(pool: PgPool) {
     let server = MockServer::start().await;
-    let state = app_state(pool, &server.uri(), github_credentials());
+    let state = app_state(pool, &server.uri(), pat_auth());
 
     let no_pr = finished_session(
         &state,
@@ -249,7 +249,7 @@ async fn rejects_sessions_without_a_pr(pool: PgPool) {
 #[sqlx::test(migrations = "../vise-core/migrations")]
 async fn requires_the_github_credential_provider(pool: PgPool) {
     let server = MockServer::start().await;
-    let state = app_state(pool, &server.uri(), Default::default());
+    let state = app_state(pool, &server.uri(), None);
     let root = pr_session(&state, 17).await;
     let (status, _) = follow_up(&state, &root.id, serde_json::json!({})).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);

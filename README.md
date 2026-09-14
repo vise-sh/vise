@@ -78,9 +78,32 @@ input, composed server-side at creation time. Its outcome is `pr_updated`;
 tracking stays with the session that opened the PR, however many follow-ups
 chain off it.
 
-The tracker and the follow-up endpoint reuse the server's GitHub App
-credential, which needs the *Pull requests: read* and *Checks: read*
-permissions in addition to the *Contents: read/write* that hosts need to push.
+The tracker and the follow-up endpoint reuse the server's GitHub credential
+(App or PAT, see below), which needs the *Pull requests: read* and
+*Checks: read* permissions in addition to the *Contents: read/write* that
+hosts need to push.
+
+## GitHub authentication
+
+`github_repo` sessions need the server to authenticate to GitHub, both to hand
+hosts a token for cloning and pushing and to read pull requests for tracking
+and follow-ups. Two options are supported:
+
+- **GitHub App** (recommended for organizations): set `VISE_GITHUB_APP_ID`
+  and `VISE_GITHUB_APP_PRIVATE_KEY_PATH`. The server mints a short-lived
+  installation token scoped to the session's repository for every session.
+- **Personal access token**: set `VISE_GITHUB_PAT` when the App is not
+  installed. The same token is handed to every session and used for all
+  server-side reads. Use a [fine-grained PAT](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-fine-grained-personal-access-token)
+  restricted to the repositories vise works on, with *Contents: read/write*,
+  *Pull requests: read/write* and *Checks: read* (the same permissions the App
+  needs).
+
+Both modes get identical behaviour: hosts obtain the credential through the
+same endpoint, and PR tracking and follow-up sessions work the same way. If
+both are configured, the App wins and the PAT is ignored (the server logs
+this at startup). With neither, `github_repo` sessions fail and PR tracking is
+disabled.
 
 ## Architecture
 

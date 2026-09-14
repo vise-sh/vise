@@ -159,7 +159,7 @@ pub async fn create_session(
         (status = 409, description = "The PR is already merged or closed"),
         (status = 422, description = "The session did not open a pull request"),
         (status = 502, description = "GitHub could not be reached"),
-        (status = 503, description = "GitHub credential provider not configured")
+        (status = 503, description = "Neither the GitHub App nor a PAT is configured")
     )
 )]
 pub async fn follow_up_session(
@@ -205,46 +205,23 @@ pub async fn follow_up_session(
         return Err(StatusCode::CONFLICT);
     }
 
-    let provider = state
-        .credentials
-        .get("github")
+    let github = state
+        .github
+        .as_ref()
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
-    let token = provider
-        .issue(&root)
-        .await
-        .map_err(|error| match error {
-            crate::credentials::IssueError::NotApplicable(reason) => {
-                tracing::warn!(session_id = %root.id, %reason, "github credential not applicable");
-                StatusCode::UNPROCESSABLE_ENTITY
-            }
-            crate::credentials::IssueError::Upstream(error) => {
-                tracing::error!(session_id = %root.id, %error, "github credential issue failed");
-                StatusCode::BAD_GATEWAY
-            }
-        })?
-        .secret;
 
     let upstream = |error: crate::github::GithubError| {
         tracing::error!(session_id = %root.id, %error, "github fetch failed");
         StatusCode::BAD_GATEWAY
     };
-    let pull = state.github.pull(&token, &pr).await.map_err(upstream)?;
+    let pull = github.pull(&pr).await.map_err(upstream)?;
     if pull.merged || pull.closed {
         return Err(StatusCode::CONFLICT);
     }
-    let review_summaries = state
-        .github
-        .review_summaries(&token, &pr)
-        .await
-        .map_err(upstream)?;
-    let review_comments = state
-        .github
-        .review_comments(&token, &pr)
-        .await
-        .map_err(upstream)?;
-    let failing_checks: Vec<String> = state
-        .github
-        .check_runs(&token, &pr, &pull.head_sha)
+    let review_summaries = github.review_summaries(&pr).await.map_err(upstream)?;
+    let review_comments = github.review_comments(&pr).await.map_err(upstream)?;
+    let failing_checks: Vec<String> = github
+        .check_runs(&pr, &pull.head_sha)
         .await
         .map_err(upstream)?
         .into_iter()

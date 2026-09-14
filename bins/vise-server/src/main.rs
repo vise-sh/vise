@@ -52,28 +52,37 @@ async fn main() -> anyhow::Result<()> {
     let github_api_base = std::env::var("VISE_GITHUB_API_BASE")
         .unwrap_or_else(|_| "https://api.github.com".to_string());
 
-    if let (Ok(app_id), Ok(key_path)) = (
-        std::env::var("VISE_GITHUB_APP_ID"),
-        std::env::var("VISE_GITHUB_APP_PRIVATE_KEY_PATH"),
+    // GitHub auth: the App when configured, otherwise a PAT. The same source
+    // backs the tokens handed to hosts and the server's own PR reads.
+    let github_app = match (
+        env_value("VISE_GITHUB_APP_ID"),
+        env_value("VISE_GITHUB_APP_PRIVATE_KEY_PATH"),
     ) {
-        let pem = std::fs::read_to_string(&key_path)?;
-        let client =
-            vise_api::github::GitHubAppClient::new(app_id.parse()?, &pem, github_api_base.clone())?;
-        credentials.insert(
-            "github".to_string(),
-            Arc::new(vise_api::credentials::GithubCredentialProvider { client }),
-        );
-        tracing::info!(%app_id, "github credential provider configured");
-    } else {
-        tracing::warn!("github app not configured; github_repo sessions will fail");
+        (Some(app_id), Some(key_path)) => {
+            let pem = std::fs::read_to_string(&key_path)?;
+            let client = vise_api::github::GitHubAppClient::new(
+                app_id.parse()?,
+                &pem,
+                github_api_base.clone(),
+            )?;
+            tracing::info!(%app_id, "github app configured");
+            Some(Arc::new(client))
+        }
+        _ => None,
+    };
+    let github_pat = env_value("VISE_GITHUB_PAT");
+    let github = vise_api::github::GithubAuth::select(github_app, github_pat).map(|auth| {
+        tracing::info!(auth = auth.kind(), "github credential provider configured");
+        credentials.insert("github".to_string(), auth.credential_provider());
+        vise_api::github::GitHubApi::new(github_api_base, auth)
+    });
+    if github.is_none() {
+        tracing::warn!("github app or pat not configured; github_repo sessions will fail");
     }
 
-    let github = vise_api::github::GitHubApi::new(github_api_base);
-
     // PR tracker: follows every PR a session opened until it merges or closes,
-    // recording state transitions as session events. Reuses the GitHub
-    // credential provider; the App needs "Pull requests: read" and
-    // "Checks: read" on the tracked repositories.
+    // recording state transitions as session events. The credential needs
+    // "Pull requests: read" and "Checks: read" on the tracked repositories.
     {
         let interval_secs: u64 = std::env::var("VISE_PR_POLL_INTERVAL_SECS")
             .ok()
@@ -82,7 +91,6 @@ async fn main() -> anyhow::Result<()> {
             .unwrap_or(60);
         let poller = vise_api::pr_tracking::PrPoller::new(
             sessions.clone(),
-            credentials.get("github").cloned(),
             github.clone(),
             std::time::Duration::from_secs(interval_secs.max(1)),
         );
@@ -105,4 +113,12 @@ async fn main() -> anyhow::Result<()> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+/// An environment variable, treating unset and blank the same way.
+fn env_value(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }

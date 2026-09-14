@@ -20,7 +20,6 @@ use vise_core::sessions::pr_tracking::{reduce, transitions};
 use vise_core::sessions::repository::SessionRepository;
 use vise_core::sessions::service::SessionService;
 
-use crate::credentials::CredentialProvider;
 use crate::github::{GitHubApi, PullRef};
 
 /// Consecutive 403/404 responses before a session is marked `sync_error`.
@@ -46,16 +45,12 @@ pub struct TickReport {
 
 pub struct PrPoller<R> {
     sessions: Arc<SessionService<R>>,
-    /// The "github" credential provider; the same one hosts use.
-    credentials: Option<Arc<dyn CredentialProvider>>,
-    github: GitHubApi,
+    /// GitHub read client, authenticated with the App or the PAT; `None`
+    /// when neither is configured, which disables tracking.
+    github: Option<GitHubApi>,
     interval: Duration,
     /// Consecutive not-visible failures per session id.
     failures: HashMap<String, u32>,
-    /// Tokens minted during the current tick, by repository. Installation
-    /// tokens are per repo and outlive a tick by far, so one mint per repo
-    /// per tick is enough however many PRs the repo has.
-    tick_tokens: HashMap<String, String>,
 }
 
 enum SyncFailure {
@@ -70,29 +65,30 @@ where
 {
     pub fn new(
         sessions: Arc<SessionService<R>>,
-        credentials: Option<Arc<dyn CredentialProvider>>,
-        github: GitHubApi,
+        github: Option<GitHubApi>,
         interval: Duration,
     ) -> Self {
         Self {
             sessions,
-            credentials,
             github,
             interval,
             failures: HashMap::new(),
-            tick_tokens: HashMap::new(),
         }
     }
 
     /// Poll forever. Never returns while the server runs: every failure is
     /// logged and retried on the next tick.
     pub async fn run_forever(mut self) {
-        if self.credentials.is_none() {
-            tracing::warn!("github credential provider not configured; PR tracking disabled");
+        let Some(github) = &self.github else {
+            tracing::warn!("github app or pat not configured; PR tracking disabled");
             return;
-        }
+        };
 
-        tracing::info!(interval_secs = self.interval.as_secs(), "pr poller started");
+        tracing::info!(
+            interval_secs = self.interval.as_secs(),
+            auth = github.auth().kind(),
+            "pr poller started"
+        );
 
         loop {
             let report = self.tick().await;
@@ -118,7 +114,6 @@ where
     /// One pass over the work list.
     pub async fn tick(&mut self) -> TickReport {
         let mut report = TickReport::default();
-        self.tick_tokens.clear();
 
         let work = match self.sessions.pr_tracking_work_list(WORK_LIST_LIMIT).await {
             Ok(work) => work,
@@ -147,7 +142,7 @@ where
     }
 
     async fn sync_session(&mut self, id: &str) -> Result<(), SyncFailure> {
-        let Some(credentials) = self.credentials.clone() else {
+        let Some(github) = self.github.clone() else {
             return Err(SyncFailure::Skipped);
         };
 
@@ -171,26 +166,7 @@ where
                 .map_err(|_| SyncFailure::Skipped);
         };
 
-        let repo = pr.full_repo();
-        let token = match self.tick_tokens.get(&repo) {
-            Some(token) => token.clone(),
-            None => match credentials.issue(&session).await {
-                Ok(issued) => {
-                    self.tick_tokens.insert(repo, issued.secret.clone());
-                    issued.secret
-                }
-                Err(crate::credentials::IssueError::NotApplicable(reason)) => {
-                    tracing::error!(session_id = %id, %reason, "github credential not applicable");
-                    return Err(SyncFailure::Skipped);
-                }
-                Err(crate::credentials::IssueError::Upstream(error)) => {
-                    tracing::warn!(session_id = %id, %error, "github credential issue failed");
-                    return Err(SyncFailure::Skipped);
-                }
-            },
-        };
-
-        match self.github.observe(&token, &pr).await {
+        match github.observe(&pr).await {
             Ok((_, observation)) => {
                 self.failures.remove(id);
                 let (state, checks) = reduce(&observation);

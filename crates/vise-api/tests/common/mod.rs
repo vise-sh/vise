@@ -3,11 +3,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use sqlx::PgPool;
 use vise_api::AppState;
-use vise_api::credentials::{CredentialProvider, IssueError, IssuedCredential};
-use vise_api::github::GitHubApi;
+use vise_api::credentials::CredentialProvider;
+use vise_api::github::{GitHubApi, GithubAuth};
 use vise_core::hosts::{postgres::PostgresHostRepository, service::HostService};
 use vise_core::sessions::model::{
     Agent, Environment, NewSessionEvent, Session, SessionOutcome, SessionStatus,
@@ -16,44 +15,31 @@ use vise_core::sessions::{postgres::PostgresSessionRepository, service::SessionS
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-pub const TOKEN: &str = "ghs_static_test_token";
+pub const TOKEN: &str = "github_pat_static_test_token";
 pub const HOST: &str = "host_test";
 
-/// Stands in for the GitHub App provider: hands out one fixed token.
-pub struct StaticGithubCredential;
-
-#[async_trait]
-impl CredentialProvider for StaticGithubCredential {
-    fn name(&self) -> &'static str {
-        "github"
-    }
-
-    async fn issue(&self, _session: &Session) -> Result<IssuedCredential, IssueError> {
-        Ok(IssuedCredential {
-            secret: TOKEN.to_string(),
-            expires_at: None,
-        })
-    }
+/// PAT-mode GitHub auth with one fixed token, the way a server configured
+/// with `VISE_GITHUB_PAT` (and no App) runs.
+pub fn pat_auth() -> Option<GithubAuth> {
+    Some(GithubAuth::Pat(TOKEN.to_string()))
 }
 
-pub fn github_credentials() -> HashMap<String, Arc<dyn CredentialProvider>> {
+/// Application state wired like `vise-server` does it: `github` (if any)
+/// supplies both the "github" credential provider and the read client
+/// pointed at `github_base`.
+pub fn app_state(pool: PgPool, github_base: &str, github: Option<GithubAuth>) -> AppState {
     let mut credentials: HashMap<String, Arc<dyn CredentialProvider>> = HashMap::new();
-    credentials.insert("github".to_string(), Arc::new(StaticGithubCredential));
-    credentials
-}
-
-pub fn app_state(
-    pool: PgPool,
-    github_base: &str,
-    credentials: HashMap<String, Arc<dyn CredentialProvider>>,
-) -> AppState {
+    let github = github.map(|auth| {
+        credentials.insert("github".to_string(), auth.credential_provider());
+        GitHubApi::new(github_base.to_string(), auth)
+    });
     AppState {
         sessions: Arc::new(SessionService::new(PostgresSessionRepository::new(
             pool.clone(),
         ))),
         hosts: Arc::new(HostService::new(PostgresHostRepository::new(pool))),
         credentials,
-        github: GitHubApi::new(github_base.to_string()),
+        github,
     }
 }
 
