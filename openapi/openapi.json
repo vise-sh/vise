@@ -981,7 +981,7 @@
             "description": "GitHub could not be reached"
           },
           "503": {
-            "description": "GitHub credential provider not configured"
+            "description": "Neither the GitHub App nor a PAT is configured"
           }
         },
         "tags": [

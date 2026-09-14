@@ -4,18 +4,16 @@ use std::time::Duration;
 
 use common::*;
 use sqlx::PgPool;
-use vise_api::github::GitHubApi;
 use vise_api::pr_tracking::{PrPoller, SYNC_ERROR_THRESHOLD};
 use vise_core::sessions::model::{ChecksState, PrState, SessionOutcome};
 use vise_core::sessions::postgres::PostgresSessionRepository;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-fn poller(state: &vise_api::AppState, server: &MockServer) -> PrPoller<PostgresSessionRepository> {
+fn poller(state: &vise_api::AppState) -> PrPoller<PostgresSessionRepository> {
     PrPoller::new(
         state.sessions.clone(),
-        state.credentials.get("github").cloned(),
-        GitHubApi::new(server.uri()),
+        state.github.clone(),
         Duration::from_secs(60),
     )
 }
@@ -35,7 +33,7 @@ async fn pr_events(state: &vise_api::AppState, id: &str) -> Vec<(i64, serde_json
 #[sqlx::test(migrations = "../vise-core/migrations")]
 async fn first_sync_writes_snapshot_and_transition_events_together(pool: PgPool) {
     let server = MockServer::start().await;
-    let state = app_state(pool, &server.uri(), github_credentials());
+    let state = app_state(pool, &server.uri(), pat_auth());
     let session = pr_session(&state, 17).await;
 
     mount_pull(&server, 17, pull_json(true, false, "vise/feature", "sha1")).await;
@@ -58,7 +56,7 @@ async fn first_sync_writes_snapshot_and_transition_events_together(pool: PgPool)
     )
     .await;
 
-    let report = poller(&state, &server).tick().await;
+    let report = poller(&state).tick().await;
     assert_eq!(report.synced, 1);
     assert_eq!(report.backoff, None);
 
@@ -87,11 +85,11 @@ async fn first_sync_writes_snapshot_and_transition_events_together(pool: PgPool)
 #[sqlx::test(migrations = "../vise-core/migrations")]
 async fn unchanged_observation_touches_last_synced_at_only(pool: PgPool) {
     let server = MockServer::start().await;
-    let state = app_state(pool, &server.uri(), github_credentials());
+    let state = app_state(pool, &server.uri(), pat_auth());
     let session = pr_session(&state, 17).await;
     mount_open_pr(&server, 17).await;
 
-    let mut poller = poller(&state, &server);
+    let mut poller = poller(&state);
     poller.tick().await;
     let first = state
         .sessions
@@ -129,7 +127,7 @@ async fn unchanged_observation_touches_last_synced_at_only(pool: PgPool) {
 #[sqlx::test(migrations = "../vise-core/migrations")]
 async fn only_the_changed_dimension_emits_an_event(pool: PgPool) {
     let server = MockServer::start().await;
-    let state = app_state(pool, &server.uri(), github_credentials());
+    let state = app_state(pool, &server.uri(), pat_auth());
     let session = pr_session(&state, 17).await;
 
     mount_pull(&server, 17, pull_json(true, false, "vise/feature", "sha1")).await;
@@ -150,7 +148,7 @@ async fn only_the_changed_dimension_emits_an_event(pool: PgPool) {
     )
     .await;
 
-    let mut poller = poller(&state, &server);
+    let mut poller = poller(&state);
     poller.tick().await;
     poller.tick().await;
 
@@ -169,7 +167,7 @@ async fn only_the_changed_dimension_emits_an_event(pool: PgPool) {
 #[sqlx::test(migrations = "../vise-core/migrations")]
 async fn merged_and_closed_prs_leave_the_work_list(pool: PgPool) {
     let server = MockServer::start().await;
-    let state = app_state(pool, &server.uri(), github_credentials());
+    let state = app_state(pool, &server.uri(), pat_auth());
     let merged = pr_session(&state, 1).await;
     let closed = pr_session(&state, 2).await;
     let open = pr_session(&state, 3).await;
@@ -197,7 +195,7 @@ async fn merged_and_closed_prs_leave_the_work_list(pool: PgPool) {
     let work_before = state.sessions.pr_tracking_work_list(100).await.unwrap();
     assert_eq!(work_before.len(), 3);
 
-    let mut poller = poller(&state, &server);
+    let mut poller = poller(&state);
     let report = poller.tick().await;
     assert_eq!(report.synced, 3);
 
@@ -240,7 +238,7 @@ async fn merged_and_closed_prs_leave_the_work_list(pool: PgPool) {
 #[sqlx::test(migrations = "../vise-core/migrations")]
 async fn persistent_not_found_becomes_sync_error_and_recovers(pool: PgPool) {
     let server = MockServer::start().await;
-    let state = app_state(pool, &server.uri(), github_credentials());
+    let state = app_state(pool, &server.uri(), pat_auth());
     let session = pr_session(&state, 17).await;
 
     Mock::given(method("GET"))
@@ -251,7 +249,7 @@ async fn persistent_not_found_becomes_sync_error_and_recovers(pool: PgPool) {
         .await;
     mount_open_pr(&server, 17).await;
 
-    let mut poller = poller(&state, &server);
+    let mut poller = poller(&state);
 
     for attempt in 1..SYNC_ERROR_THRESHOLD {
         let report = poller.tick().await;
@@ -287,7 +285,7 @@ async fn persistent_not_found_becomes_sync_error_and_recovers(pool: PgPool) {
 #[sqlx::test(migrations = "../vise-core/migrations")]
 async fn transient_failures_skip_and_retry(pool: PgPool) {
     let server = MockServer::start().await;
-    let state = app_state(pool, &server.uri(), github_credentials());
+    let state = app_state(pool, &server.uri(), pat_auth());
     let session = pr_session(&state, 17).await;
 
     Mock::given(method("GET"))
@@ -298,7 +296,7 @@ async fn transient_failures_skip_and_retry(pool: PgPool) {
         .await;
     mount_open_pr(&server, 17).await;
 
-    let mut poller = poller(&state, &server);
+    let mut poller = poller(&state);
     let report = poller.tick().await;
     assert_eq!((report.synced, report.skipped), (0, 1));
     assert!(
@@ -319,7 +317,7 @@ async fn transient_failures_skip_and_retry(pool: PgPool) {
 #[sqlx::test(migrations = "../vise-core/migrations")]
 async fn rate_limit_backs_off_the_whole_tick(pool: PgPool) {
     let server = MockServer::start().await;
-    let state = app_state(pool, &server.uri(), github_credentials());
+    let state = app_state(pool, &server.uri(), pat_auth());
     pr_session(&state, 1).await;
     pr_session(&state, 2).await;
 
@@ -334,7 +332,7 @@ async fn rate_limit_backs_off_the_whole_tick(pool: PgPool) {
         .mount(&server)
         .await;
 
-    let report = poller(&state, &server).tick().await;
+    let report = poller(&state).tick().await;
     assert_eq!(report.synced, 0);
     assert_eq!(report.skipped, 1, "the rest of the list is left for later");
     let backoff = report.backoff.expect("backoff requested");
@@ -344,7 +342,7 @@ async fn rate_limit_backs_off_the_whole_tick(pool: PgPool) {
 #[sqlx::test(migrations = "../vise-core/migrations")]
 async fn a_locked_session_is_skipped_by_a_second_poller(pool: PgPool) {
     let server = MockServer::start().await;
-    let state = app_state(pool, &server.uri(), github_credentials());
+    let state = app_state(pool, &server.uri(), pat_auth());
     let session = pr_session(&state, 17).await;
     mount_open_pr(&server, 17).await;
 
@@ -355,10 +353,77 @@ async fn a_locked_session_is_skipped_by_a_second_poller(pool: PgPool) {
         .unwrap()
         .expect("first lock succeeds");
 
-    let report = poller(&state, &server).tick().await;
+    let report = poller(&state).tick().await;
     assert_eq!((report.synced, report.skipped), (0, 1));
 
     drop(held);
-    let report = poller(&state, &server).tick().await;
+    let report = poller(&state).tick().await;
     assert_eq!((report.synced, report.skipped), (1, 0));
+}
+
+#[sqlx::test(migrations = "../vise-core/migrations")]
+async fn pat_auth_tracks_prs_against_the_configured_api_base(pool: PgPool) {
+    let server = MockServer::start().await;
+    let state = app_state(pool, &server.uri(), pat_auth());
+    let session = pr_session(&state, 17).await;
+
+    // Every read carries the PAT; nothing else would match these mocks.
+    let bearer = || header("authorization", format!("Bearer {TOKEN}").as_str());
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/widgets/pulls/17"))
+        .and(bearer())
+        .respond_with(ResponseTemplate::new(200).set_body_json(pull_json(
+            true,
+            false,
+            "vise/feature",
+            "sha1",
+        )))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/widgets/pulls/17/reviews"))
+        .and(bearer())
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!([review("alice", "APPROVED", "sha1", 1)])),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/widgets/commits/sha1/check-runs"))
+        .and(bearer())
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "total_count": 1,
+            "check_runs": [check_run("test", "completed", Some("success"))]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let report = poller(&state).tick().await;
+    assert_eq!((report.synced, report.skipped), (1, 0));
+
+    let status = state
+        .sessions
+        .get(&session.id)
+        .await
+        .unwrap()
+        .unwrap()
+        .pr_status
+        .expect("snapshot written");
+    assert_eq!(status.state, PrState::Approved);
+    assert_eq!(status.checks, Some(ChecksState::Passing));
+    assert_eq!(
+        pr_events(&state, &session.id)
+            .await
+            .into_iter()
+            .map(|(_, p)| p)
+            .collect::<Vec<_>>(),
+        vec![
+            serde_json::json!({ "type": "pr_state_changed", "from": null, "to": "approved" }),
+            serde_json::json!({ "type": "checks_state_changed", "from": null, "to": "passing" }),
+        ]
+    );
 }
