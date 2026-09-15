@@ -104,3 +104,16 @@ run-host:
 
 run-cli *ARGS:
     cargo run -p vise-cli -- "$@"
+
+# Build vise-cli/vise-host in release mode and symlink them into ~/.vise/bin
+# (the same directory scripts/install.sh manages) as `vise` / `vise-host`, so
+# a plain `vise` on your PATH runs your local checkout. `vise host start`
+# looks for vise-host next to the running `vise` binary first, so keeping
+# both symlinks together is enough for `vise host ...` to work.
+install-dev:
+    cargo build --release -p vise-cli -p vise-host
+    mkdir -p ~/.vise/bin
+    ln -sf "{{justfile_directory()}}/target/release/vise-cli" ~/.vise/bin/vise
+    ln -sf "{{justfile_directory()}}/target/release/vise-host" ~/.vise/bin/vise-host
+    ~/.vise/bin/vise --version
+    @echo 'If ~/.vise/bin is not already on your PATH: export PATH="$HOME/.vise/bin:$PATH"'
