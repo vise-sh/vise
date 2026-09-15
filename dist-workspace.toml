@@ -19,8 +19,10 @@ hosting = "github"
 # vise-server container image to ghcr.io for the same tag.
 publish-jobs = ["./publish-docker"]
 # The default custom-publish permissions (id-token + packages) drop
-# `contents`, which actions/checkout needs on a private repository.
-github-custom-job-permissions = { "publish-docker" = { contents = "read", packages = "write" } }
+# `contents`, which actions/checkout needs on a private repository. `id-token`
+# is kept: the workflow signs the pushed image with cosign using the job's
+# GitHub OIDC token (Sigstore keyless).
+github-custom-job-permissions = { "publish-docker" = { contents = "read", packages = "write", id-token = "write" } }
 # Tags are created by release-plz (see release-plz.toml); this workflow only
 # builds on tag push, it never tags or bumps versions itself.
 

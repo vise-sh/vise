@@ -91,6 +91,8 @@ Swagger UI is at `/docs`. While the repository is private, the image is too:
 `docker login ghcr.io` with a token that has `read:packages` first. With a
 GitHub App instead of a PAT, add the overlay that mounts the private key:
 `docker compose -f docker-compose.yml -f docker-compose.github-app.yml up -d`.
+Release images are signed with cosign; [SECURITY.md](SECURITY.md#verifying-the-container-image)
+shows how to verify a pulled image.
 
 To run the server from source instead, you also need Rust (stable) and
 [just](https://github.com/casey/just):
