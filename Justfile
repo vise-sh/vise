@@ -32,6 +32,11 @@ test *ARGS:
 audit:
     cargo deny check advisories licenses
 
+# Generate the CycloneDX SBOMs that release.yml attaches to each GitHub
+# Release, into target/sbom/ (needs cargo-cyclonedx; see scripts/sbom.sh).
+sbom:
+    scripts/sbom.sh
+
 # Spell-check source and docs (needs typos: `cargo install typos-cli`).
 typos:
     typos
