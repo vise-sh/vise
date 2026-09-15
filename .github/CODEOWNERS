@@ -1,4 +1,4 @@
 # Default owners for everything in the repository. Reviews from a listed
 # owner are requested automatically on every pull request.
 # See https://docs.github.com/articles/about-code-owners
-*   @vise-sh/maintainers
+*   @ericpsimon
