@@ -61,8 +61,11 @@ ENV SQLX_OFFLINE=true
 
 # The `dist` profile is what the release archives are built with. The cache
 # mounts make repeated local builds incremental; CI relies on layer caching.
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/local/cargo/git \
+# `sharing=locked` on the registry/git caches: the amd64 and arm64 builder
+# stages run concurrently and would otherwise race to extract the same crate
+# into the same shared cache dir (`failed to unpack package ...: File exists`).
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,target=/src/target,id=vise-target-$TARGETPLATFORM \
     set -eux; \
     target="$(cat /rust-target)"; \

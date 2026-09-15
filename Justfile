@@ -40,6 +40,10 @@ typos:
 coverage:
     cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
 
+# Lint the shell scripts in scripts/ (needs shellcheck).
+shellcheck:
+    shellcheck scripts/*.sh
+
 # ---------------------------------------------------------------------------
 # sqlx offline query cache. The `.sqlx/` directory is committed so the
 # workspace builds without a database (CI sets SQLX_OFFLINE=true).

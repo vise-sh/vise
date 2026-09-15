@@ -68,7 +68,7 @@ fi
 
 if [[ "$HARNESS" == "claude-code" ]]; then
     WORKSPACE="${TMPDIR:-/tmp}/vise-sessions/$SESSION_ID/workspace"
-    if [[ "$(cat "$WORKSPACE/hello.txt" 2>/dev/null | tr -d '[:space:]')" == "hello" ]]; then
+    if [[ "$(tr -d '[:space:]' 2>/dev/null < "$WORKSPACE/hello.txt")" == "hello" ]]; then
         echo "ok   - agent created hello.txt in $WORKSPACE"
     else
         echo "FAIL - $WORKSPACE/hello.txt missing or wrong content"
