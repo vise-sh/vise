@@ -112,6 +112,10 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
+      # sqlx::query!/query_as! check against .sqlx/ at compile time; there's no
+      # live Postgres here, so read the committed cache instead (same fix
+      # release-plz.yml already applies for its own build).
+      SQLX_OFFLINE: "true"
     steps:
       - name: enable windows longpaths
         run: |
