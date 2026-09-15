@@ -10,6 +10,13 @@
 # The image is built for linux/amd64 and linux/arm64 (the Dockerfile
 # cross-compiles, so no QEMU) and tagged with the release version and
 # `latest`. Pre-releases never reach here; dist skips publish jobs for them.
+#
+# After the push, the multi-arch manifest is signed by digest with cosign in
+# keyless mode: the job's GitHub Actions OIDC token (hence `id-token: write`)
+# is exchanged for a short-lived Sigstore certificate, so there is no signing
+# key to store or rotate. The signature is stored next to the image in
+# ghcr.io and the certificate is recorded in the public Rekor transparency
+# log. SECURITY.md documents how to verify it.
 name: Publish vise-server image
 
 on:
@@ -30,6 +37,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
@@ -45,7 +53,8 @@ jobs:
           images: ${{ env.IMAGE }}
           tags: |
             type=semver,pattern={{version}},value=${{ fromJson(inputs.plan).announcement_tag }}
-      - uses: docker/build-push-action@v7
+      - id: build
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -54,3 +63,13 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - uses: sigstore/cosign-installer@v3
+      # Sign the pushed manifest list by digest rather than by tag, so the
+      # signature is bound to exactly what was built even if a tag (`latest`)
+      # is later moved. Both the version tag and `latest` resolve to this
+      # digest, so one signature covers them. `--yes` skips the interactive
+      # confirmation for uploading to the transparency log.
+      - name: Sign image with cosign (keyless)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"

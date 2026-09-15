@@ -41,6 +41,36 @@ release before reporting, in case the issue has already been fixed.
 | Older releases | No |
 | `main` (unreleased) | Best effort |
 
+## Verifying the container image
+
+Every `ghcr.io/vise-sh/vise-server` image published by a release is signed
+with [cosign](https://github.com/sigstore/cosign) in keyless mode. The
+signature is produced by the `publish-docker.yml` workflow in this repository
+using GitHub Actions' OIDC identity, so there is no long-lived signing key;
+the short-lived certificate is recorded in the public Sigstore transparency
+log (Rekor). The multi-arch manifest is signed by digest, so the same signature
+covers the version tag and `latest`.
+
+To check that an image really came from a release of this repository, install
+cosign and run:
+
+```sh
+cosign verify ghcr.io/vise-sh/vise-server:latest \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github\.com/vise-sh/vise/\.github/workflows/publish-docker\.yml@refs/tags/v'
+```
+
+To pin to a specific release, replace the regexp with the exact identity for
+that tag, for example
+`--certificate-identity https://github.com/vise-sh/vise/.github/workflows/publish-docker.yml@refs/tags/v0.1.0`,
+and verify the matching version tag or the image digest instead of `latest`.
+
+A successful run prints the verified signature as JSON and exits 0. Any other
+result means the image was not signed by our release workflow: do not run it,
+and please report it to us as described above. While the repository is
+private, `cosign verify` needs the same `docker login ghcr.io` credentials as
+pulling the image.
+
 ## Scope
 
 vise executes agent workloads on hosts you enroll and talks to GitHub on your
