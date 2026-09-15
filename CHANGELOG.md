@@ -8,3 +8,15 @@ Entries are generated from [Conventional Commits](https://www.conventionalcommit
 by [release-plz](https://release-plz.dev); edit commit messages, not this file.
 
 ## [Unreleased]
+
+## [0.1.0](https://github.com/vise-sh/vise/releases/tag/v0.1.0) - 2026-09-15
+
+### Added
+
+- *(cli)* add `vise host start|stop|status|logs` to manage the local host
+- track PRs after completion and spawn follow-up sessions
+
+### Other
+
+- dev tooling, CI gate, licensing, community files, and release automation
+- Initial commit
