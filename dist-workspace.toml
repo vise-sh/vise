@@ -23,4 +23,8 @@ publish-jobs = ["./publish-docker"]
 github-custom-job-permissions = { "publish-docker" = { contents = "read", packages = "write" } }
 # Tags are created by release-plz (see release-plz.toml); this workflow only
 # builds on tag push, it never tags or bumps versions itself.
+# release.yml carries one hand-written step (the SHA256SUMS.txt release
+# asset); without this, dist refuses to build because the generated CI file
+# no longer matches its template. Re-apply that step after `dist generate`.
+allow-dirty = ["ci"]
 

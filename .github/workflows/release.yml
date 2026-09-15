@@ -266,6 +266,39 @@ jobs:
         run: |
           # Remove the granular manifests
           rm -f artifacts/*-dist-manifest.json
+      # Hand-added (see allow-dirty in dist-workspace.toml): publish one
+      # SHA256SUMS.txt covering every archive as a release asset, so the
+      # checksums can be read straight off the release page instead of only
+      # from the per-archive .sha256 files served next to the archives.
+      # scripts/install.sh verifies downloads against this file first.
+      - name: Write SHA256SUMS.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd artifacts
+          archives=()
+          for f in *.tar.xz *.tar.gz *.zip; do
+            [ -e "$f" ] && archives+=("$f")
+          done
+          if [ "${#archives[@]}" -eq 0 ]; then
+            echo "no release archives found in artifacts/" >&2
+            exit 1
+          fi
+          sha256sum "${archives[@]}" > SHA256SUMS.txt
+          # The per-archive .sha256 files were written on the build runners;
+          # a disagreement means the archives changed between build and host.
+          for f in "${archives[@]}"; do
+            if [ -f "$f.sha256" ]; then
+              expected="$(cut -d' ' -f1 < "$f.sha256")"
+              actual="$(grep -E "^[0-9a-f]{64}  $f\$" SHA256SUMS.txt | cut -d' ' -f1)"
+              if [ "$expected" != "$actual" ]; then
+                echo "checksum for $f differs between $f.sha256 ($expected) and SHA256SUMS.txt ($actual)" >&2
+                exit 1
+              fi
+            fi
+          done
+          echo "SHA256SUMS.txt:"
+          cat SHA256SUMS.txt
       - name: Create GitHub Release
         env:
           PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"

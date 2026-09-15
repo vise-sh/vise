@@ -34,7 +34,8 @@ repository. Without sudo, it:
    and `ghcr.io/vise-sh/vise-server`;
 3. runs `docker compose up -d` and waits for the API on `http://localhost:3000`;
 4. downloads the `vise-cli` and `vise-host` archives from the latest
-   [GitHub release](https://github.com/vise-sh/vise/releases) into
+   [GitHub release](https://github.com/vise-sh/vise/releases), checks them
+   against the `SHA256SUMS.txt` attached to that release, and puts them in
    `~/.vise/bin` (add it to your `PATH`);
 5. enrolls this machine as a host and starts `vise-host` in the background.
 
