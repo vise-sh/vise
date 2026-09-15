@@ -15,6 +15,7 @@
 #   2. config: read VISE_GITHUB_PAT or prompt for it on the terminal
 #   3. docker compose up -d, then wait for the server to answer
 #   4. download the vise-cli and vise-host release archives for this OS/arch
+#      and check them against the SHA256SUMS.txt attached to the GitHub release
 #   5. enroll this machine as a host and start vise-host in the background
 #
 # Re-running is safe: an existing ~/.vise/.env is kept unless you say
@@ -31,6 +32,9 @@
 #   VISE_HOST_NAME      name to enroll this machine under (default: hostname)
 #   VISE_DOWNLOAD_BASE  base URL for release archives, for mirrors
 #                       (default: the GitHub release for VISE_VERSION)
+#   VISE_CHECKSUMS_URL  URL of the SHA256SUMS.txt to verify archives against
+#                       (default: the one attached to the GitHub release for
+#                       VISE_VERSION, even when VISE_DOWNLOAD_BASE is a mirror)
 #
 # Uninstall:
 #   ~/.vise/bin/vise host stop
@@ -52,6 +56,7 @@ VISE_SERVER_TAG="${VISE_SERVER_TAG:-$VISE_VERSION}"
 VISE_PORT="${VISE_PORT:-3000}"
 VISE_HOST_NAME="${VISE_HOST_NAME:-}"
 VISE_DOWNLOAD_BASE="${VISE_DOWNLOAD_BASE:-}"
+VISE_CHECKSUMS_URL="${VISE_CHECKSUMS_URL:-}"
 VISE_GITHUB_PAT="${VISE_GITHUB_PAT:-}"
 export VISE_HOME
 # The CLI prefers VISE_HOST_TOKEN from the environment over ~/.vise/.env. A
@@ -387,15 +392,63 @@ say "server is up at $VISE_URL"
 
 step "Installing vise and vise-host into $BIN_DIR"
 
-if [ -z "$VISE_DOWNLOAD_BASE" ]; then
-    if [ "$VISE_VERSION" = "latest" ]; then
-        VISE_DOWNLOAD_BASE="https://github.com/$VISE_REPO/releases/latest/download"
-    else
-        VISE_DOWNLOAD_BASE="https://github.com/$VISE_REPO/releases/download/$VISE_VERSION"
-    fi
+if [ "$VISE_VERSION" = "latest" ]; then
+    RELEASE_BASE="https://github.com/$VISE_REPO/releases/latest/download"
+else
+    RELEASE_BASE="https://github.com/$VISE_REPO/releases/download/$VISE_VERSION"
 fi
+[ -n "$VISE_DOWNLOAD_BASE" ] || VISE_DOWNLOAD_BASE="$RELEASE_BASE"
+# The checksums come from the GitHub release itself, not from wherever the
+# archives are downloaded, so a mirror cannot swap an archive unnoticed and
+# anyone can compare against the SHA256SUMS.txt shown on the release page.
+[ -n "$VISE_CHECKSUMS_URL" ] || VISE_CHECKSUMS_URL="$RELEASE_BASE/SHA256SUMS.txt"
 
 TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t vise-install)"
+SUMS_FILE="$TMP_DIR/SHA256SUMS.txt"
+
+say "downloading $VISE_CHECKSUMS_URL"
+if ! curl -fsSL --retry 3 -o "$SUMS_FILE" "$VISE_CHECKSUMS_URL" 2>/dev/null; then
+    rm -f "$SUMS_FILE"
+    warn "could not fetch $VISE_CHECKSUMS_URL; falling back to per-archive .sha256 files"
+fi
+
+# sums_lookup NAME: the checksum listed for NAME in SHA256SUMS.txt, or nothing.
+# Accepts both "HASH  NAME" (text) and "HASH *NAME" (binary) sha256sum lines.
+sums_lookup() {
+    [ -s "$SUMS_FILE" ] || return 0
+    tr -d '\r' <"$SUMS_FILE" | awk -v name="$1" '
+        NF >= 2 { f = $2; sub(/^\*/, "", f); if (f == name) { print $1; exit } }'
+}
+
+# verify_archive ARCHIVE URL: check TMP_DIR/ARCHIVE against the release
+# SHA256SUMS.txt, else against URL.sha256 served next to the archive. A
+# missing checksum only warns; a wrong one is fatal.
+verify_archive() {
+    archive="$1"
+    url="$2"
+    expected="$(sums_lookup "$archive")"
+    source="SHA256SUMS.txt"
+    if [ -z "$expected" ]; then
+        [ ! -s "$SUMS_FILE" ] || warn "$archive is not listed in SHA256SUMS.txt; trying $archive.sha256"
+        if curl -fsSL --retry 3 -o "$TMP_DIR/$archive.sha256" "$url.sha256" 2>/dev/null; then
+            expected="$(cut -d' ' -f1 <"$TMP_DIR/$archive.sha256" | tr -d '\r\n')"
+            source="$archive.sha256"
+        fi
+    fi
+    if [ -z "$expected" ]; then
+        warn "no checksum published for $archive; skipping verification"
+        return 0
+    fi
+
+    actual="$(sha256_of "$TMP_DIR/$archive")"
+    if [ -z "$actual" ]; then
+        warn "no sha256sum or shasum found; skipping checksum verification of $archive"
+    elif [ "$expected" != "$actual" ]; then
+        die "checksum mismatch for $archive (expected $expected from $source, got $actual)"
+    else
+        say "verified $archive against $source"
+    fi
+}
 
 # install_archive APP DEST: fetch APP-TARGET.tar.xz, verify, install as BIN_DIR/DEST.
 install_archive() {
@@ -408,17 +461,7 @@ install_archive() {
     curl -fsSL --retry 3 -o "$TMP_DIR/$archive" "$url" \
         || die "download failed: $url (is there a release for $VISE_VERSION with a $TARGET build?)"
 
-    if curl -fsSL --retry 3 -o "$TMP_DIR/$archive.sha256" "$url.sha256" 2>/dev/null; then
-        expected="$(cut -d' ' -f1 <"$TMP_DIR/$archive.sha256" | tr -d '\r\n')"
-        actual="$(sha256_of "$TMP_DIR/$archive")"
-        if [ -z "$actual" ]; then
-            warn "no sha256sum or shasum found; skipping checksum verification of $archive"
-        elif [ "$expected" != "$actual" ]; then
-            die "checksum mismatch for $archive (expected $expected, got $actual)"
-        fi
-    else
-        warn "no checksum published for $archive; skipping verification"
-    fi
+    verify_archive "$archive" "$url"
 
     mkdir -p "$TMP_DIR/$app"
     tar -xf "$TMP_DIR/$archive" -C "$TMP_DIR/$app" || die "could not extract $archive"
