@@ -19,7 +19,7 @@ jobs:
     name: rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -48,7 +48,7 @@ jobs:
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/vise
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -81,7 +81,7 @@ jobs:
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/vise
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -112,7 +112,7 @@ jobs:
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/vise
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -143,7 +143,7 @@ jobs:
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/vise
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -162,9 +162,9 @@ jobs:
     name: docker build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -176,7 +176,7 @@ jobs:
     name: cargo deny advisories + licenses
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check advisories licenses
@@ -185,14 +185,14 @@ jobs:
     name: typos
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: crate-ci/typos@v1
 
   shellcheck:
     name: shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # shellcheck is preinstalled on the ubuntu runner images.
       - uses: taiki-e/install-action@v2
         with:
@@ -219,7 +219,7 @@ jobs:
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/vise
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
@@ -233,7 +233,7 @@ jobs:
       - run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
       # Tokenless upload works for public repositories. Coverage is informational
       # only: no status check is required, so a drop never blocks a merge.
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v6
         with:
           files: lcov.info
           fail_ci_if_error: false
