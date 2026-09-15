@@ -16,6 +16,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
+      # Hardcoded on purpose: this compose file is for local development only.
+      # The database holds throwaway dev data, so this password isn't
+      # protecting anything sensitive. Never reuse it (or this file as-is) for
+      # a shared, staging, or production deployment.
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: vise
     ports:
