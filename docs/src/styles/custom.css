@@ -1,0 +1,60 @@
+/*
+ * Brand tokens lifted from the vise.sh landing page so the docs read as the
+ * same product: teal accent (#0e7c6b light / #2fb89d dark), near-black-green
+ * ink, and a lowercase monospace wordmark.
+ *
+ * Starlight derives hover/active/focus shades from the --sl-color-accent-*
+ * scale, so the whole scale is set rather than a single value.
+ */
+
+/* Dark mode colors. */
+:root {
+  --sl-color-accent-low: #0f2f29;
+  --sl-color-accent: #2fb89d;
+  --sl-color-accent-high: #a6e6d3;
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #e6edea;
+  --sl-color-gray-2: #b9c4bf;
+  --sl-color-gray-3: #7f8d96;
+  --sl-color-gray-4: #4a5652;
+  --sl-color-gray-5: #233029;
+  --sl-color-gray-6: #121a17;
+  --sl-color-black: #0d1311;
+}
+
+/* Light mode colors. */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #d0eae4;
+  --sl-color-accent: #0e7c6b;
+  --sl-color-accent-high: #0a4f45;
+  --sl-color-white: #17201d;
+  --sl-color-gray-1: #233029;
+  --sl-color-gray-2: #3f4b47;
+  --sl-color-gray-3: #5a6662;
+  --sl-color-gray-4: #95a29d;
+  --sl-color-gray-5: #d7e2dd;
+  --sl-color-gray-6: #edf3f1;
+  --sl-color-gray-7: #f4f7f6;
+  --sl-color-black: #fbfcfb;
+}
+
+/* Wordmark: lowercase "vise" in IBM Plex Mono next to the bracket mark. */
+.site-title {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas,
+    'Liberation Mono', monospace;
+  font-weight: 600;
+  text-transform: lowercase;
+  letter-spacing: -0.01em;
+  gap: 0.5rem;
+}
+
+.site-title img {
+  height: 1.5rem;
+  width: 1.5rem;
+}
+
+/* Code uses the same monospace stack as vise.sh. */
+:root {
+  --sl-font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas,
+    'Liberation Mono', monospace;
+}
