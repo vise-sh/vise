@@ -122,6 +122,15 @@ from the dist-generated release workflow, pushes the multi-arch image to
 its own Rust version (`RUST_VERSION`); bump it when the code needs a newer
 compiler.
 
+GHCR creates a package as private on its first push, whatever the visibility
+of the repository, and has no API to change that, so the package has to be
+made public once by hand after the first release: organization page,
+**Packages**, `vise-server`, **Package settings**, **Change visibility**,
+**Public**. Later pushes keep that setting. It must stay public:
+`scripts/install.sh` and the quickstart pull the image anonymously, and the
+publish workflow fails the release if the pushed image cannot be pulled
+without credentials.
+
 ## OpenAPI spec and the generated client
 
 `crates/vise-client` is generated at build time from `openapi/openapi.json`,

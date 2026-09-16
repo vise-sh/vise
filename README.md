@@ -88,9 +88,9 @@ cp .env.example .env     # set VISE_GITHUB_PAT (or the App settings, see below)
 docker compose up -d     # Postgres 17 + vise-server on http://localhost:3000
 ```
 
-Swagger UI is at `/docs`. While the repository is private, the image is too:
-`docker login ghcr.io` with a token that has `read:packages` first. With a
-GitHub App instead of a PAT, add the overlay that mounts the private key:
+Swagger UI is at `/docs`. The image is public, so no `docker login` is needed
+to pull it. With a GitHub App instead of a PAT, add the overlay that mounts the
+private key:
 `docker compose -f docker-compose.yml -f docker-compose.github-app.yml up -d`.
 Release images are signed with cosign; [SECURITY.md](SECURITY.md#verifying-the-container-image)
 shows how to verify a pulled image.
@@ -160,9 +160,10 @@ tracking stays with the session that opened the PR, however many follow-ups
 chain off it.
 
 The tracker and the follow-up endpoint reuse the server's GitHub credential
-(App or PAT, see below), which needs the *Pull requests: read* and
-*Checks: read* permissions in addition to the *Contents: read/write* that
-hosts need to push.
+(App or PAT, see below), which needs to read pull requests and check runs in
+addition to the *Contents: read/write* that hosts need to push: *Pull
+requests: read* and *Checks: read* for a GitHub App, *Pull requests: read* and
+*Actions: read* for a fine-grained PAT.
 
 ## GitHub authentication
 
@@ -173,12 +174,15 @@ and follow-ups. Two options are supported:
 - **GitHub App** (recommended for organizations): set `VISE_GITHUB_APP_ID`
   and `VISE_GITHUB_APP_PRIVATE_KEY_PATH`. The server mints a short-lived
   installation token scoped to the session's repository for every session.
+  The App needs *Contents: read/write*, *Pull requests: read/write* and
+  *Checks: read* on those repositories.
 - **Personal access token**: set `VISE_GITHUB_PAT` when the App is not
   installed. The same token is handed to every session and used for all
   server-side reads. Use a [fine-grained PAT](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-fine-grained-personal-access-token)
   restricted to the repositories vise works on, with *Contents: read/write*,
-  *Pull requests: read/write* and *Checks: read* (the same permissions the App
-  needs).
+  *Pull requests: read/write* and *Actions: read*. Fine-grained PATs cannot be
+  given the *Checks* permission (only GitHub Apps can), so check runs are read
+  through *Actions: read* instead.
 
 Both modes get identical behaviour: hosts obtain the credential through the
 same endpoint, and PR tracking and follow-up sessions work the same way. If

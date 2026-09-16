@@ -251,10 +251,12 @@ fi
 if [ ! -f "$ENV_FILE" ]; then
     if [ -z "$VISE_GITHUB_PAT" ]; then
         has_tty || die "VISE_GITHUB_PAT is not set and there is no terminal to ask on. Run: curl -fsSL https://vise.sh/install | VISE_GITHUB_PAT=ghp_... sh"
-        printf '\nvise needs a GitHub personal access token so hosts can clone and push and the\n' >/dev/tty
-        printf 'server can open and track pull requests. Create one at\n' >/dev/tty
-        printf 'https://github.com/settings/tokens with repo access (Contents, Pull requests,\n' >/dev/tty
-        printf 'Checks: read/write). It is stored only in %s.\n\n' "$ENV_FILE" >/dev/tty
+        printf '\nvise needs a GitHub personal access token: hosts use it to clone and push, the\n' >/dev/tty
+        printf 'agent to open pull requests and the server to track them. Create a fine-grained\n' >/dev/tty
+        printf 'token at https://github.com/settings/personal-access-tokens, restricted to the\n' >/dev/tty
+        printf 'repositories vise works on, with Contents: read/write, Pull requests: read/write\n' >/dev/tty
+        printf 'and Actions: read (check runs are read through Actions; fine-grained tokens have\n' >/dev/tty
+        printf 'no Checks permission). It is stored only in %s.\n\n' "$ENV_FILE" >/dev/tty
         VISE_GITHUB_PAT="$(ask_secret "GitHub personal access token: ")"
     fi
     [ -n "$VISE_GITHUB_PAT" ] || die "no GitHub personal access token given"

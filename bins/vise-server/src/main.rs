@@ -89,7 +89,8 @@ async fn main() -> anyhow::Result<()> {
 
     // PR tracker: follows every PR a session opened until it merges or closes,
     // recording state transitions as session events. The credential needs
-    // "Pull requests: read" and "Checks: read" on the tracked repositories.
+    // "Pull requests: read" and "Checks: read" (GitHub App) or "Pull requests:
+    // read" and "Actions: read" (fine-grained PAT) on the tracked repositories.
     {
         let interval_secs: u64 = std::env::var("VISE_PR_POLL_INTERVAL_SECS")
             .ok()

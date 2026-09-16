@@ -67,9 +67,7 @@ and verify the matching version tag or the image digest instead of `latest`.
 
 A successful run prints the verified signature as JSON and exits 0. Any other
 result means the image was not signed by our release workflow: do not run it,
-and please report it to us as described above. While the repository is
-private, `cosign verify` needs the same `docker login ghcr.io` credentials as
-pulling the image.
+and please report it to us as described above.
 
 ## Scope
 

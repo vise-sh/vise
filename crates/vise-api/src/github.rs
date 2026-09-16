@@ -363,9 +363,10 @@ struct RawCheckRuns {
 /// the follow-up endpoint. Authenticates every call through its
 /// [`GithubAuth`], so callers work the same with an App or a PAT.
 ///
-/// The credential needs `pull_requests: read` and `checks: read` on the
-/// repository (GitHub App permissions "Pull requests" and "Checks", or the
-/// equivalent fine-grained PAT permissions).
+/// The credential needs to read pull requests and check runs on the
+/// repository: GitHub App permissions "Pull requests: read" and "Checks: read",
+/// or "Pull requests: read" and "Actions: read" for a fine-grained PAT, which
+/// cannot be given "Checks".
 #[derive(Clone)]
 pub struct GitHubApi {
     http: reqwest::Client,
