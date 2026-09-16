@@ -1,0 +1,21 @@
+# Cloudflare Worker (Static Assets model), deployed as docs.vise.sh.
+#
+# Cloudflare dashboard (Workers Builds) settings for this project:
+#   Root directory: docs
+#   Build command:  npm run build     -> produces ./dist (Astro static output)
+#   Deploy command: npx wrangler deploy
+#
+# No Worker script: the docs site has no API routes or redirects, so this
+# ships as static assets only (no `main` key). See vise-sh/landing's
+# wrangler.toml for the pattern this follows, including why [build] is set
+# below: it makes `npx wrangler deploy` produce ./dist itself even if the
+# dashboard's own Build command field is ever left empty.
+
+name = "vise-docs"
+compatibility_date = "2026-09-16"
+
+[build]
+command = "npm run build"
+
+[assets]
+directory = "./dist"
