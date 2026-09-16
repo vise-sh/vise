@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- vise mark: bracket jaws gripping the pinned runtime. Light-scheme ink. -->
+  <g fill="none" stroke="#17201d" stroke-width="9" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M36 27 H23 V73 H36"/>
+    <path d="M64 27 H77 V73 H64"/>
+  </g>
+  <rect x="41" y="41" width="18" height="18" rx="2.5" fill="#0e7c6b"/>
+</svg>

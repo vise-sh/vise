@@ -1,0 +1,40 @@
+---
+title: vise
+description: Open-source background coding agents on hosts you control.
+template: splash
+hero:
+  tagline: Open-source background coding agents. vise runs them on hosts you control, on your model credentials, with a human on every PR.
+  image:
+    light: ../../assets/logo-light.svg
+    dark: ../../assets/logo-dark.svg
+    alt: vise
+  actions:
+    - text: Get started
+      link: /getting-started/introduction/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/vise-sh/vise
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid stagger>
+  <Card title="One-line install" icon="rocket">
+    `curl -fsSL https://vise.sh/install | sh` stands up the server, enrolls this
+    machine as a host and puts the `vise` CLI on your PATH. See [Install](/getting-started/install/).
+  </Card>
+  <Card title="Describe a task, get a PR" icon="pull-request">
+    `vise sessions create "..." --repo owner/repo --watch` clones the repo,
+    runs the agent, and reports the pull request it opened. See [Quickstart](/getting-started/quickstart/).
+  </Card>
+  <Card title="Your hosts, your credentials" icon="laptop">
+    Agents run as a plain process on machines you enroll, with the model
+    credentials already on that machine. Only GitHub is outside your infrastructure.
+  </Card>
+  <Card title="Tracked to merge" icon="approve-check">
+    The server polls every PR a session opens and records review and check
+    state as events, so `sessions watch` follows it until it merges or closes.
+  </Card>
+</CardGrid>
