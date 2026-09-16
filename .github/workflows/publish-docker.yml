@@ -18,12 +18,13 @@
 # ghcr.io and the certificate is recorded in the public Rekor transparency
 # log. SECURITY.md documents how to verify it.
 #
-# Finally the job checks that the image can be pulled anonymously. GHCR makes
-# a package private on its first push and offers no API to change that, so a
-# maintainer switches it to public once in the package settings (see
-# CONTRIBUTING.md, "Container image"). scripts/install.sh pulls without
-# credentials, so a private package breaks every install; better to fail the
-# release loudly here.
+# Finally the job checks that the image can be pulled anonymously
+# (scripts/check-image-public.sh). GHCR makes a package private on its first
+# push and offers no API to change that, so a maintainer switches it to public
+# once in the package settings (see CONTRIBUTING.md, "Container image").
+# scripts/install.sh pulls without credentials, so a private package breaks
+# every install; better to fail the release loudly here. Between releases,
+# image-public.yml repeats the check on a schedule.
 name: Publish vise-server image
 
 on:
@@ -80,19 +81,14 @@ jobs:
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: cosign sign --yes "${IMAGE}@${DIGEST}"
-      # Same anonymous token dance a `docker pull` does for a public image.
+      # Same anonymous token dance a `docker pull` does for a public image;
+      # image-public.yml runs the same script between releases.
       - name: Check the image can be pulled anonymously
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           SETTINGS_URL: https://github.com/orgs/${{ github.repository_owner }}/packages/container/vise-server/settings
         run: |
-          repo="${IMAGE#ghcr.io/}"
-          if token="$(curl -fsS "https://ghcr.io/token?scope=repository:${repo}:pull" | jq -r .token)" \
-            && curl -fsS -o /dev/null -H "Authorization: Bearer ${token}" \
-                 -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
-                 "https://ghcr.io/v2/${repo}/manifests/${DIGEST}"; then
-            echo "${IMAGE}@${DIGEST} can be pulled anonymously"
-          else
+          if ! scripts/check-image-public.sh "${IMAGE}@${DIGEST}"; then
             echo "::error::${IMAGE} cannot be pulled anonymously: the GHCR package is private. Change its visibility to public at ${SETTINGS_URL} (CONTRIBUTING.md, 'Container image') and re-run this job."
             exit 1
           fi

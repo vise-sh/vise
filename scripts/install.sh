@@ -13,7 +13,8 @@
 # Steps, each of which fails loudly on its own:
 #   1. prerequisites: docker (with compose) and git; claude is optional
 #   2. config: read VISE_GITHUB_PAT or prompt for it on the terminal
-#   3. docker compose up -d, then wait for the server to answer
+#   3. docker compose pull (anonymously; the image is public) and up -d,
+#      then wait for the server to answer
 #   4. download the vise-cli and vise-host release archives for this OS/arch
 #      and check them against the SHA256SUMS.txt attached to the GitHub release
 #   5. enroll this machine as a host and start vise-host in the background
@@ -365,7 +366,33 @@ say "wrote $COMPOSE_FILE"
 
 step "Starting postgres and vise-server with docker compose"
 
-compose pull --quiet || warn "could not pull images; using whatever is already present locally"
+TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t vise-install)"
+
+# The installer pulls anonymously: ghcr.io/vise-sh/vise-server is a public
+# package. A pull that fails with "unauthorized" therefore means the registry
+# would not serve the image without credentials (a private GHCR package, or a
+# tag that does not exist), not that the GitHub PAT is wrong; say so instead of
+# letting `compose up` fail on the same error a moment later.
+SERVER_IMAGE_REF="$(env_get VISE_SERVER_IMAGE):$(env_get VISE_SERVER_TAG)"
+if ! compose pull --quiet >"$TMP_DIR/pull.log" 2>&1; then
+    if docker image inspect "$SERVER_IMAGE_REF" >/dev/null 2>&1; then
+        warn "could not pull images; using the $SERVER_IMAGE_REF already present locally"
+    else
+        cat "$TMP_DIR/pull.log" >&2
+        if grep -qiE 'unauthorized|denied' "$TMP_DIR/pull.log"; then
+            case "$SERVER_IMAGE_REF" in
+                ghcr.io/*/*)
+                    pkg="${SERVER_IMAGE_REF#ghcr.io/}"
+                    pkg="${pkg%%:*}"
+                    hint="For ghcr.io that means the package is private; a maintainer has to make it public in its settings: https://github.com/orgs/${pkg%%/*}/packages/container/${pkg#*/}/settings"
+                    ;;
+                *) hint="Check that the image is public, or that the tag exists." ;;
+            esac
+            die "the registry refused to serve $SERVER_IMAGE_REF without credentials, and there is no local copy to fall back to. $hint If you have access, 'docker login' with a token that can read packages and re-run."
+        fi
+        die "could not pull $SERVER_IMAGE_REF and there is no local copy to fall back to (output above). Check the network and the image tag, then re-run."
+    fi
+fi
 compose up -d --remove-orphans || die "docker compose up failed. Inspect with: docker compose -f $COMPOSE_FILE logs"
 
 say "waiting for the API at $VISE_URL (up to ${HEALTH_TIMEOUT_SECS}s)"
@@ -405,7 +432,6 @@ fi
 # anyone can compare against the SHA256SUMS.txt shown on the release page.
 [ -n "$VISE_CHECKSUMS_URL" ] || VISE_CHECKSUMS_URL="$RELEASE_BASE/SHA256SUMS.txt"
 
-TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t vise-install)"
 SUMS_FILE="$TMP_DIR/SHA256SUMS.txt"
 
 say "downloading $VISE_CHECKSUMS_URL"

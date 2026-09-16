@@ -124,12 +124,22 @@ compiler.
 
 GHCR creates a package as private on its first push, whatever the visibility
 of the repository, and has no API to change that, so the package has to be
-made public once by hand after the first release: organization page,
-**Packages**, `vise-server`, **Package settings**, **Change visibility**,
-**Public**. Later pushes keep that setting. It must stay public:
-`scripts/install.sh` and the quickstart pull the image anonymously, and the
-publish workflow fails the release if the pushed image cannot be pulled
-without credentials.
+made public once by hand after the first release, by an organization owner:
+<https://github.com/orgs/vise-sh/packages/container/vise-server/settings>,
+**Danger Zone**, **Change visibility**, **Public** (or: organization page,
+**Packages**, `vise-server`, **Package settings**). If the dialog does not
+offer *Public*, the organization's **Packages** settings restrict package
+creation to private/internal; enable public packages there first. Later
+pushes keep the setting. It must stay public: `scripts/install.sh` and the
+quickstart pull the image anonymously, and a private package shows up for
+every user as `docker compose pull` failing with `unauthorized`.
+
+`scripts/check-image-public.sh IMAGE` tells whether an image can be pulled
+without credentials. The publish workflow runs it on the image it just
+pushed and fails the release otherwise, and `.github/workflows/image-public.yml`
+runs it against `latest` daily and on demand (**Actions**, *Image is public*,
+**Run workflow**), so a package that is private between releases is noticed
+before users hit it.
 
 ## OpenAPI spec and the generated client
 
