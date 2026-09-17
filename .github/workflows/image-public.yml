@@ -1,0 +1,35 @@
+# Checks, daily and on demand, that the published vise-server image can still
+# be pulled without credentials.
+#
+# scripts/install.sh and the quickstart pull ghcr.io/<owner>/vise-server
+# anonymously. GHCR creates a package as private on its first push and a
+# maintainer makes it public by hand once (CONTRIBUTING.md, "Container
+# image"); publish-docker.yml verifies that at release time, but a package
+# that is private *now* (the step was never done, or someone changed it back)
+# only shows up at the next release, or as "unauthorized" on every user's
+# `docker compose pull` until then. This workflow makes it show up here first.
+name: Image is public
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    name: ghcr.io/${{ github.repository_owner }}/vise-server:latest pulls anonymously
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/vise-server:latest
+          SETTINGS_URL: https://github.com/orgs/${{ github.repository_owner }}/packages/container/vise-server/settings
+        run: |
+          if ! scripts/check-image-public.sh "$IMAGE"; then
+            echo "::error::${IMAGE} cannot be pulled anonymously, so 'curl -fsSL https://vise.sh/install | sh' fails for everyone. Change the package visibility to public at ${SETTINGS_URL} (CONTRIBUTING.md, 'Container image')."
+            exit 1
+          fi
