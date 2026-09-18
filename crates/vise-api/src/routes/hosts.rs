@@ -80,12 +80,12 @@ pub struct EnrollHostResponse {
 )]
 pub async fn enroll_host(
     State(state): State<AppState>,
-    _caller: AuthedCaller,
+    AuthedCaller(caller): AuthedCaller,
     Json(request): Json<EnrollHostRequest>,
 ) -> Result<(StatusCode, Json<EnrollHostResponse>), StatusCode> {
     let enrolled = state
         .hosts
-        .enroll(request.name)
+        .enroll(caller.workspace.clone(), request.name)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -115,11 +115,11 @@ pub async fn enroll_host(
 )]
 pub async fn list_hosts(
     State(state): State<AppState>,
-    _caller: AuthedCaller,
+    AuthedCaller(caller): AuthedCaller,
 ) -> Result<Json<Vec<vise_core::hosts::model::Host>>, StatusCode> {
     let hosts = state
         .hosts
-        .list()
+        .list(&caller.workspace)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -349,9 +349,10 @@ pub async fn issue_credential(
         .get(&request.provider)
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
 
+    // Scoped to the host's own workspace, like every other host-driven path.
     let session = state
         .sessions
-        .get(&id)
+        .get(&host.workspace_id, &id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;

@@ -16,9 +16,12 @@ pub struct AppState {
     /// Read-only GitHub client for PR tracking and follow-up composition;
     /// `None` when neither the GitHub App nor a PAT is configured.
     pub github: Option<crate::github::GitHubApi>,
-    /// Resolves the caller of user-facing routes (sessions, host enrollment).
-    /// `vise-server` uses [`crate::auth::from_env`]; an external composition
-    /// can supply its own [`CallerExtractor`].
+    /// Resolves the caller of user-facing routes (sessions, host enrollment),
+    /// including the workspace they are scoped to. `vise-server` uses
+    /// [`crate::auth::from_env`], whose extractors put every caller in the
+    /// default workspace; an external composition can supply its own
+    /// [`CallerExtractor`]. Host-driven routes derive their scope from the
+    /// authenticated host instead.
     pub caller: Arc<dyn CallerExtractor>,
 }
 

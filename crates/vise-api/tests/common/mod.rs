@@ -13,11 +13,11 @@ use vise_core::sessions::model::{
     Agent, Environment, NewSessionEvent, Session, SessionOutcome, SessionStatus,
 };
 use vise_core::sessions::{postgres::PostgresSessionRepository, service::SessionService};
+use vise_core::workspaces::model::WorkspaceId;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 pub const TOKEN: &str = "github_pat_static_test_token";
-pub const HOST: &str = "host_test";
 
 /// PAT-mode GitHub auth with one fixed token, the way a server configured
 /// with `VISE_GITHUB_PAT` (and no App) runs.
@@ -62,6 +62,19 @@ pub fn github_env(repo: &str) -> Environment {
     }
 }
 
+/// Enroll a host in the default workspace, where the `OpenAccess` caller
+/// of `app_state` acts. Claims derive their scope from the host row, so a
+/// session can only be driven through a real host.
+pub async fn enrolled_host(state: &AppState) -> vise_core::hosts::model::Host {
+    let name = vise_core::id::new_id("test-host");
+    state
+        .hosts
+        .enroll(WorkspaceId::DEFAULT, name)
+        .await
+        .unwrap()
+        .host
+}
+
 /// Create a session, run it through claim → events → finish so it ends up
 /// `completed` with the given outcome, like a real host would leave it.
 pub async fn finished_session(
@@ -69,9 +82,11 @@ pub async fn finished_session(
     outcome: SessionOutcome,
     host_events: usize,
 ) -> Session {
+    let host = enrolled_host(state).await;
     let session = state
         .sessions
         .create(
+            WorkspaceId::DEFAULT,
             agent(),
             github_env("acme/widgets"),
             "do the thing".into(),
@@ -79,7 +94,7 @@ pub async fn finished_session(
         )
         .await
         .unwrap();
-    let claimed = state.sessions.claim(HOST).await.unwrap().unwrap();
+    let claimed = state.sessions.claim(&host.id).await.unwrap().unwrap();
     assert_eq!(claimed.id, session.id);
 
     let events: Vec<NewSessionEvent> = (1..=host_events as i64)
@@ -91,7 +106,7 @@ pub async fn finished_session(
     if !events.is_empty() {
         state
             .sessions
-            .append_events(HOST, &session.id, &events)
+            .append_events(&host.id, &session.id, &events)
             .await
             .unwrap()
             .unwrap();
@@ -100,7 +115,7 @@ pub async fn finished_session(
     state
         .sessions
         .finish(
-            HOST,
+            &host.id,
             &session.id,
             SessionStatus::Completed,
             Some("end_turn".into()),

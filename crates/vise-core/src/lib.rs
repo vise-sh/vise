@@ -1,6 +1,7 @@
 pub mod hosts;
 pub mod id;
 pub mod sessions;
+pub mod workspaces;
 
 /// The schema migrations in `crates/vise-core/migrations`, embedded at compile
 /// time so a deployed `vise-server` can bring its own database up to date

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT session_id, seq, payload, created_at\n            FROM session_events\n            WHERE session_id = $1 AND seq > $2\n            ORDER BY seq\n            LIMIT $3\n            ",
+  "query": "\n            SELECT e.session_id, e.seq, e.payload, e.created_at\n            FROM session_events e\n            JOIN sessions s ON s.id = e.session_id\n            WHERE s.workspace_id = $1 AND e.session_id = $2 AND e.seq > $3\n            ORDER BY e.seq\n            LIMIT $4\n            ",
   "describe": {
     "columns": [
       {
@@ -51,6 +51,7 @@
     "parameters": {
       "Left": [
         "Text",
+        "Text",
         "Int8",
         "Int8"
       ]
@@ -62,5 +63,5 @@
       false
     ]
   },
-  "hash": "4395381e647cd12080c34907566db0534190229984cc8952dbda78a51cc60bc6"
+  "hash": "d9aed584f06707f684db1c13e00f270989fb007783c15285dde4bf46d550890e"
 }

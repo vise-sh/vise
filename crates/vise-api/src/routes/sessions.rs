@@ -12,6 +12,7 @@ use axum::{
 use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+use vise_core::workspaces::model::WorkspaceId;
 
 use crate::AppState;
 use crate::auth::AuthedCaller;
@@ -67,11 +68,11 @@ pub struct FollowUpRequest {
 )]
 pub async fn list_sessions(
     State(state): State<AppState>,
-    _caller: AuthedCaller,
+    AuthedCaller(caller): AuthedCaller,
 ) -> Result<Json<ListSessionsResponse>, StatusCode> {
     let sessions = state
         .sessions
-        .list()
+        .list(&caller.workspace)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -101,12 +102,12 @@ pub async fn list_sessions(
 )]
 pub async fn get_session(
     State(state): State<AppState>,
-    _caller: AuthedCaller,
+    AuthedCaller(caller): AuthedCaller,
     Path(id): Path<String>,
 ) -> Result<Json<vise_core::sessions::model::Session>, StatusCode> {
     let session = state
         .sessions
-        .get(&id)
+        .get(&caller.workspace, &id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         .and_then(|s| s.ok_or(StatusCode::NOT_FOUND))?;
@@ -133,7 +134,7 @@ pub async fn get_session(
 )]
 pub async fn create_session(
     State(state): State<AppState>,
-    _caller: AuthedCaller,
+    AuthedCaller(caller): AuthedCaller,
     Json(request): Json<CreateSessionRequest>,
 ) -> Result<(StatusCode, Json<vise_core::sessions::model::Session>), StatusCode> {
     if let Err(reason) = request.environment.validate() {
@@ -143,7 +144,13 @@ pub async fn create_session(
 
     let session = state
         .sessions
-        .create(request.agent, request.environment, request.input, None)
+        .create(
+            caller.workspace.clone(),
+            request.agent,
+            request.environment,
+            request.input,
+            None,
+        )
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -176,7 +183,7 @@ pub async fn create_session(
 )]
 pub async fn follow_up_session(
     State(state): State<AppState>,
-    _caller: AuthedCaller,
+    AuthedCaller(caller): AuthedCaller,
     Path(id): Path<String>,
     Json(request): Json<FollowUpRequest>,
 ) -> Result<(StatusCode, Json<vise_core::sessions::model::Session>), StatusCode> {
@@ -186,7 +193,7 @@ pub async fn follow_up_session(
 
     let parent = state
         .sessions
-        .get(&id)
+        .get(&caller.workspace, &id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -194,7 +201,7 @@ pub async fn follow_up_session(
     // Tracking lives on the session that opened the PR; follow-ups chain to it.
     let root = state
         .sessions
-        .resolve_tracking_root(&id)
+        .resolve_tracking_root(&caller.workspace, &id)
         .await
         .map_err(|error| {
             tracing::error!(session_id = %id, %error, "follow-up root resolution failed");
@@ -260,7 +267,13 @@ pub async fn follow_up_session(
 
     let session = state
         .sessions
-        .create(agent, environment, input, Some(parent.id.clone()))
+        .create(
+            caller.workspace.clone(),
+            agent,
+            environment,
+            input,
+            Some(parent.id.clone()),
+        )
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -297,13 +310,14 @@ pub struct EventsQuery {
 )]
 pub async fn get_events(
     State(state): State<AppState>,
-    _caller: AuthedCaller,
+    AuthedCaller(caller): AuthedCaller,
     Path(id): Path<String>,
     Query(query): Query<EventsQuery>,
 ) -> Result<Json<Vec<vise_core::sessions::model::SessionEvent>>, StatusCode> {
     let events = state
         .sessions
         .get_events(
+            &caller.workspace,
             &id,
             query.after_seq.unwrap_or(0),
             query.limit.unwrap_or(1000).clamp(1, 10_000),
@@ -336,12 +350,12 @@ pub async fn get_events(
 )]
 pub async fn cancel_session(
     State(state): State<AppState>,
-    _caller: AuthedCaller,
+    AuthedCaller(caller): AuthedCaller,
     Path(id): Path<String>,
 ) -> Result<Json<vise_core::sessions::model::Session>, StatusCode> {
     let session = state
         .sessions
-        .request_cancel(&id)
+        .request_cancel(&caller.workspace, &id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -350,7 +364,7 @@ pub async fn cancel_session(
         None => {
             let exists = state
                 .sessions
-                .get(&id)
+                .get(&caller.workspace, &id)
                 .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
                 .is_some();
@@ -366,6 +380,7 @@ pub async fn cancel_session(
 
 struct EventCursor {
     state: AppState,
+    workspace: WorkspaceId,
     id: String,
     after_seq: i64,
     buffer: VecDeque<vise_core::sessions::model::SessionEvent>,
@@ -399,12 +414,13 @@ fn is_tracking_pr(session: &vise_core::sessions::model::Session) -> bool {
 /// until the PR is merged or closed), closing with a `done` event.
 pub async fn stream_events(
     State(state): State<AppState>,
-    _caller: AuthedCaller,
+    AuthedCaller(caller): AuthedCaller,
     Path(id): Path<String>,
     Query(query): Query<EventsQuery>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let cursor = EventCursor {
         state,
+        workspace: caller.workspace,
         id,
         after_seq: query.after_seq.unwrap_or(0),
         buffer: VecDeque::new(),
@@ -428,14 +444,19 @@ pub async fn stream_events(
             match cursor
                 .state
                 .sessions
-                .get_events(&cursor.id, cursor.after_seq, 256)
+                .get_events(&cursor.workspace, &cursor.id, cursor.after_seq, 256)
                 .await
             {
                 Ok(events) if !events.is_empty() => {
                     cursor.buffer.extend(events);
                 }
 
-                Ok(_) => match cursor.state.sessions.get(&cursor.id).await {
+                Ok(_) => match cursor
+                    .state
+                    .sessions
+                    .get(&cursor.workspace, &cursor.id)
+                    .await
+                {
                     Ok(Some(session)) if is_terminal(&session.status) => {
                         if is_tracking_pr(&session) {
                             tokio::time::sleep(Duration::from_millis(1000)).await;

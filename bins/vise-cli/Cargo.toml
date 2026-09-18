@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+# Depends on vise-client, which cannot be published (see its Cargo.toml);
+# distributed via GitHub releases only, like vise-host and vise-server.
+publish = false
 
 [lints]
 workspace = true

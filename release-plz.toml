@@ -24,13 +24,10 @@ git_release_enable = false
 # owns dependency bumps.
 dependencies_update = false
 pr_labels = ["release"]
-# Nothing is published to crates.io yet. Flip to `true` (and add a
-# CARGO_REGISTRY_TOKEN secret) once the crates are ready for crates.io;
-# crates with `publish = false` in their Cargo.toml stay excluded regardless.
-publish = false
-# cargo-semver-checks needs published baselines to compare against; enable
-# together with `publish`.
-semver_check = false
+# crates with `publish = false` in their Cargo.toml stay excluded regardless
+# (currently vise-cli, vise-client, vise-host, vise-server).
+publish = true
+semver_check = true
 
 # vise-cli is the "release anchor": it owns the tag. One unified `vX.Y.Z` tag
 # selects every dist-managed package at that version.

@@ -2,6 +2,7 @@ use chrono::Utc;
 use sha2::{Digest, Sha256};
 
 use super::{model::Host, repository::HostRepository};
+use crate::workspaces::model::WorkspaceId;
 
 pub struct HostService<R> {
     repository: R,
@@ -22,11 +23,16 @@ where
         Self { repository }
     }
 
-    pub async fn enroll(&self, name: String) -> anyhow::Result<EnrolledHost> {
+    pub async fn enroll(
+        &self,
+        workspace: WorkspaceId,
+        name: String,
+    ) -> anyhow::Result<EnrolledHost> {
         let token = crate::id::new_token("vhost");
 
         let host = Host {
             id: crate::id::new_id("host"),
+            workspace_id: workspace,
             name,
             last_seen_at: None,
             created_at: Utc::now(),
@@ -37,8 +43,8 @@ where
         Ok(EnrolledHost { host, token })
     }
 
-    pub async fn list(&self) -> anyhow::Result<Vec<Host>> {
-        self.repository.list().await
+    pub async fn list(&self, workspace: &WorkspaceId) -> anyhow::Result<Vec<Host>> {
+        self.repository.list(workspace).await
     }
 
     pub async fn authenticate(&self, token: &str) -> anyhow::Result<Option<Host>> {

@@ -22,6 +22,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use subtle::ConstantTimeEq;
+use vise_core::workspaces::model::WorkspaceId;
 
 /// Environment variable holding the static API token, read by
 /// [`StaticToken::from_env`].
@@ -29,37 +30,42 @@ pub const API_TOKEN_ENV: &str = "VISE_API_TOKEN";
 
 /// The resolved identity of whoever is calling a user-facing route.
 ///
-/// `#[non_exhaustive]` so fields can be added (richer workspace context,
-/// roles, ...) without breaking external [`CallerExtractor`] implementations;
-/// build one with [`Caller::anonymous`] or [`Caller::new`].
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// `#[non_exhaustive]` so fields can be added (roles, ...) without breaking
+/// external [`CallerExtractor`] implementations; build one with
+/// [`Caller::anonymous`] or [`Caller::new`].
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Caller {
     /// Stable identifier of the principal (user id, API key id, ...), when
     /// the extractor has one. The OSS extractors do not.
     pub subject: Option<String>,
-    /// Workspace the caller acts in. `None` is the default workspace, which
-    /// is the only one an OSS deployment has.
-    pub workspace: Option<String>,
+    /// Workspace the caller acts in: every user-facing route scopes its
+    /// reads and writes to it. The OSS extractors resolve to
+    /// [`WorkspaceId::DEFAULT`], the only workspace an out-of-the-box server
+    /// has; a hosted composition resolves it per caller.
+    pub workspace: WorkspaceId,
 }
 
 impl Caller {
-    /// A caller with no identity and the default workspace.
+    /// A caller with no identity in the default workspace.
     pub fn anonymous() -> Self {
-        Self::default()
+        Self {
+            subject: None,
+            workspace: WorkspaceId::DEFAULT,
+        }
     }
 
     /// A caller identified by `subject`, in the default workspace.
     pub fn new(subject: impl Into<String>) -> Self {
         Self {
             subject: Some(subject.into()),
-            workspace: None,
+            workspace: WorkspaceId::DEFAULT,
         }
     }
 
     /// Set the workspace the caller acts in.
-    pub fn with_workspace(mut self, workspace: impl Into<String>) -> Self {
-        self.workspace = Some(workspace.into());
+    pub fn with_workspace(mut self, workspace: impl Into<WorkspaceId>) -> Self {
+        self.workspace = workspace.into();
         self
     }
 }
@@ -163,11 +169,20 @@ impl CallerExtractor for StaticToken {
 }
 
 /// The extractor the OSS server runs with: [`StaticToken`] when
-/// `VISE_API_TOKEN` is set, otherwise [`OpenAccess`].
+/// `VISE_API_TOKEN` is set, otherwise [`OpenAccess`]. Logs which one was
+/// chosen, since an open server is worth noticing at startup.
 pub fn from_env() -> Arc<dyn CallerExtractor> {
     match StaticToken::from_env() {
-        Some(token) => Arc::new(token),
-        None => Arc::new(OpenAccess),
+        Some(token) => {
+            tracing::info!("api token configured; user-facing routes require a bearer token");
+            Arc::new(token)
+        }
+        None => {
+            tracing::warn!(
+                "{API_TOKEN_ENV} unset; user-facing routes accept unauthenticated requests"
+            );
+            Arc::new(OpenAccess)
+        }
     }
 }
 

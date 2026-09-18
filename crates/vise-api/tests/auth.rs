@@ -13,6 +13,7 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 use vise_api::AppState;
 use vise_api::auth::{Caller, CallerError, CallerExtractor, OpenAccess, StaticToken};
+use vise_core::workspaces::model::WorkspaceId;
 
 const API_TOKEN: &str = "s3cret-api-token";
 
@@ -273,22 +274,41 @@ impl CallerExtractor for HeaderUser {
 
 #[sqlx::test(migrations = "../vise-core/migrations")]
 async fn an_external_extractor_replaces_the_oss_ones(pool: PgPool) {
+    // A session created through the OSS extractor lands in the default
+    // workspace.
     let mut state = open_state(pool);
+    let (status, _, body) = call("POST", "/sessions")
+        .json(create_session_body())
+        .send(&state)
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let id = body["id"].as_str().unwrap().to_string();
+    assert_eq!(body["workspace_id"], WorkspaceId::DEFAULT.as_str());
+
     state.caller = Arc::new(HeaderUser);
 
     let (status, _, _) = call("GET", "/sessions").send(&state).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
-    let response = vise_api::app(state.clone())
-        .oneshot(
-            Request::get("/sessions")
+    // Alice is scoped to her own workspace, so the default workspace's
+    // session is invisible to her: the routes read the workspace off the
+    // caller, not off the state.
+    let as_alice = |path: String| {
+        vise_api::app(state.clone()).oneshot(
+            Request::get(path)
                 .header("x-user", "alice")
                 .body(Body::empty())
                 .unwrap(),
         )
-        .await
-        .unwrap();
+    };
+    let response = as_alice("/sessions".into()).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let listed: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(listed["sessions"].as_array().map(Vec::len), Some(0));
+
+    let response = as_alice(format!("/sessions/{id}")).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
     // Host-protocol routes are untouched by the swap.
     let (status, _, _) = call("POST", "/hosts/claim")
@@ -304,9 +324,10 @@ async fn an_external_extractor_replaces_the_oss_ones(pool: PgPool) {
 }
 
 #[test]
-fn a_caller_carries_an_optional_workspace() {
+fn a_caller_defaults_to_the_default_workspace() {
     let caller = Caller::new("alice").with_workspace("ws-1");
     assert_eq!(caller.subject.as_deref(), Some("alice"));
-    assert_eq!(caller.workspace.as_deref(), Some("ws-1"));
-    assert_eq!(Caller::anonymous().workspace, None);
+    assert_eq!(caller.workspace, WorkspaceId::new("ws-1"));
+    assert_eq!(Caller::new("bob").workspace, WorkspaceId::DEFAULT);
+    assert_eq!(Caller::anonymous().workspace, WorkspaceId::DEFAULT);
 }

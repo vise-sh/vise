@@ -196,6 +196,17 @@ session that addresses review feedback on an existing session's PR:
   can chain, but PR tracking always lives on the root session that opened the
   PR, resolved by walking the parent chain.
 
+## Tenancy
+
+Every host and session belongs to exactly one *workspace*, the tenant
+boundary in the schema. Host names are unique within a workspace, and a host
+only ever claims sessions from its own workspace. The migrations seed a
+single workspace named `default`, and `vise-server` puts everything there:
+out of the box vise is single-tenant, there are no workspace routes in the
+API, and nothing in the CLI or host flow mentions workspaces. The column is
+there so a hosting layer built on `vise-core` can keep many tenants in one
+database.
+
 ## Server
 
 `vise-server` is one process with four jobs, backed by Postgres:
