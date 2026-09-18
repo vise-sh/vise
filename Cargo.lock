@@ -3736,6 +3736,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "uuid",
  "vise-client",
 ]
 

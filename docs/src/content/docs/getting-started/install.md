@@ -147,6 +147,16 @@ compose file passes it to the server, and the CLI reads the same file to send
 it as a bearer token. `vise --api-token <token>` or `VISE_API_TOKEN` in the
 environment override it. The host keeps using its own `VISE_HOST_TOKEN`.
 
+### Signing in to a vise cloud server
+
+Against a vise cloud server (one with a browser dashboard), `vise login`
+replaces the manual token setup: it opens the dashboard in your browser,
+asks you to authorize the CLI for your workspace, and writes the resulting
+API key to `~/.vise/.env` as `VISE_API_TOKEN`. On a headless machine, run
+`vise login --paste` and paste a key created under the dashboard's
+Settings → API keys section. Self-hosted (OSS) servers have no browser
+login — set `VISE_API_TOKEN` as described above instead.
+
 ## GitHub authentication
 
 `github_repo` sessions need the server to authenticate to GitHub, both to hand
