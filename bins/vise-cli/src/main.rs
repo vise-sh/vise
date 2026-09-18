@@ -1,4 +1,5 @@
 mod host;
+mod login;
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -32,6 +33,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Sign in to a vise cloud server via the browser and store the API
+    /// token in ~/.vise/.env (self-hosted servers: set VISE_API_TOKEN instead)
+    Login {
+        /// Skip the browser handoff: print the dashboard URL and paste an
+        /// API key created there (for headless machines)
+        #[arg(long)]
+        paste: bool,
+    },
+
     /// Manage sessions
     Sessions {
         #[command(subcommand)]
@@ -241,6 +251,10 @@ async fn main() -> anyhow::Result<()> {
     let client = ViseClient::new_with_client(&url, http_client(api_token.as_deref())?);
 
     match cli.command {
+        Command::Login { paste } => {
+            login::run(&paths, &url, paste).await?;
+        }
+
         Command::Sessions { command } => match command {
             SessionsCommand::Ls => {
                 let sessions = client.list_sessions().await?.into_inner();
