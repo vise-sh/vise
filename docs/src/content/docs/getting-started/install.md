@@ -149,13 +149,15 @@ environment override it. The host keeps using its own `VISE_HOST_TOKEN`.
 
 ### Signing in to a vise cloud server
 
-Against a vise cloud server (one with a browser dashboard), `vise login`
-replaces the manual token setup: it opens the dashboard in your browser,
-asks you to authorize the CLI for your workspace, and writes the resulting
-API key to `~/.vise/.env` as `VISE_API_TOKEN`. On a headless machine, run
-`vise login --paste` and paste a key created under the dashboard's
-Settings → API keys section. Self-hosted (OSS) servers have no browser
-login — set `VISE_API_TOKEN` as described above instead.
+Against a vise cloud server (one with a browser dashboard),
+`vise login --url https://<server>` replaces the manual token setup: it
+opens the dashboard in your browser, asks you to authorize the CLI for your
+workspace, and writes the resulting API key to `~/.vise/.env` as
+`VISE_API_TOKEN`, together with `VISE_URL`, so later commands need no
+`--url`. On a headless machine, run `vise login --url <server> --paste` and
+paste a key created under the dashboard's Settings → API keys section.
+Self-hosted (OSS) servers have no browser login — set `VISE_API_TOKEN` as
+described above instead.
 
 ## GitHub authentication
 
