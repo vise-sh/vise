@@ -53,6 +53,8 @@ services:
       VISE_GITHUB_APP_ID: ${VISE_GITHUB_APP_ID:-}
       VISE_GITHUB_PAT: ${VISE_GITHUB_PAT:-}
       VISE_GITHUB_API_BASE: ${VISE_GITHUB_API_BASE:-https://api.github.com}
+      # Optional static API token for user-facing routes; empty = open.
+      VISE_API_TOKEN: ${VISE_API_TOKEN:-}
       VISE_PR_POLL_INTERVAL_SECS: ${VISE_PR_POLL_INTERVAL_SECS:-60}
       RUST_LOG: ${RUST_LOG:-info}
 

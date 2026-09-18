@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 
 use super::model::Host;
 use crate::workspaces::model::WorkspaceId;
@@ -15,4 +16,11 @@ pub trait HostRepository: Send + Sync {
     /// effect. Returns `None` for unknown tokens. Not workspace-scoped: the
     /// token identifies the host, and the host row names its workspace.
     async fn authenticate(&self, token_hash: &str) -> anyhow::Result<Option<Host>>;
+
+    /// Delete ephemeral hosts whose `last_seen_at` (or `created_at`, for
+    /// hosts that never checked in) is before `cutoff`. Hosts that still
+    /// hold a running session are spared: the lease sweeper fails such
+    /// sessions first, and a later pass reaps the host. Non-ephemeral hosts
+    /// are never touched. Returns how many were deleted.
+    async fn delete_ephemeral_unseen_since(&self, cutoff: DateTime<Utc>) -> anyhow::Result<u64>;
 }

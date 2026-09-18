@@ -7,6 +7,7 @@ use sqlx::PgPool;
 use vise_api::pr_tracking::{PrPoller, SYNC_ERROR_THRESHOLD};
 use vise_core::sessions::model::{ChecksState, PrState, SessionOutcome};
 use vise_core::sessions::postgres::PostgresSessionRepository;
+use vise_core::workspaces::model::WorkspaceId;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -21,7 +22,7 @@ fn poller(state: &vise_api::AppState) -> PrPoller<PostgresSessionRepository> {
 async fn pr_events(state: &vise_api::AppState, id: &str) -> Vec<(i64, serde_json::Value)> {
     state
         .sessions
-        .get_events(&state.workspace, id, 0, 1000)
+        .get_events(&WorkspaceId::DEFAULT, id, 0, 1000)
         .await
         .unwrap()
         .into_iter()
@@ -62,7 +63,7 @@ async fn first_sync_writes_snapshot_and_transition_events_together(pool: PgPool)
 
     let synced = state
         .sessions
-        .get(&state.workspace, &session.id)
+        .get(&WorkspaceId::DEFAULT, &session.id)
         .await
         .unwrap()
         .unwrap();
@@ -98,7 +99,7 @@ async fn unchanged_observation_touches_last_synced_at_only(pool: PgPool) {
     poller.tick().await;
     let first = state
         .sessions
-        .get(&state.workspace, &session.id)
+        .get(&WorkspaceId::DEFAULT, &session.id)
         .await
         .unwrap()
         .unwrap()
@@ -113,7 +114,7 @@ async fn unchanged_observation_touches_last_synced_at_only(pool: PgPool) {
 
     let second = state
         .sessions
-        .get(&state.workspace, &session.id)
+        .get(&WorkspaceId::DEFAULT, &session.id)
         .await
         .unwrap()
         .unwrap()
@@ -206,7 +207,7 @@ async fn merged_and_closed_prs_leave_the_work_list(pool: PgPool) {
 
     let state_of = |id: String| {
         let sessions = state.sessions.clone();
-        let workspace = state.workspace.clone();
+        let workspace = WorkspaceId::DEFAULT;
         async move {
             sessions
                 .get(&workspace, &id)
@@ -262,7 +263,7 @@ async fn persistent_not_found_becomes_sync_error_and_recovers(pool: PgPool) {
         assert_eq!(report.skipped, 1, "attempt {attempt} skips");
         let snapshot = state
             .sessions
-            .get(&state.workspace, &session.id)
+            .get(&WorkspaceId::DEFAULT, &session.id)
             .await
             .unwrap()
             .unwrap();
@@ -276,7 +277,7 @@ async fn persistent_not_found_becomes_sync_error_and_recovers(pool: PgPool) {
     assert_eq!(report.synced, 1);
     let snapshot = state
         .sessions
-        .get(&state.workspace, &session.id)
+        .get(&WorkspaceId::DEFAULT, &session.id)
         .await
         .unwrap()
         .unwrap();
@@ -292,7 +293,7 @@ async fn persistent_not_found_becomes_sync_error_and_recovers(pool: PgPool) {
     poller.tick().await;
     let snapshot = state
         .sessions
-        .get(&state.workspace, &session.id)
+        .get(&WorkspaceId::DEFAULT, &session.id)
         .await
         .unwrap()
         .unwrap();
@@ -323,7 +324,7 @@ async fn transient_failures_skip_and_retry(pool: PgPool) {
     assert!(
         state
             .sessions
-            .get(&state.workspace, &session.id)
+            .get(&WorkspaceId::DEFAULT, &session.id)
             .await
             .unwrap()
             .unwrap()
@@ -428,7 +429,7 @@ async fn pat_auth_tracks_prs_against_the_configured_api_base(pool: PgPool) {
 
     let status = state
         .sessions
-        .get(&state.workspace, &session.id)
+        .get(&WorkspaceId::DEFAULT, &session.id)
         .await
         .unwrap()
         .unwrap()

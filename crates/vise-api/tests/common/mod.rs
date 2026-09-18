@@ -5,8 +5,12 @@ use std::sync::Arc;
 
 use sqlx::PgPool;
 use vise_api::AppState;
+use vise_api::auth::OpenAccess;
 use vise_api::credentials::CredentialProvider;
 use vise_api::github::{GitHubApi, GithubAuth};
+use vise_core::enrollment::{
+    postgres::PostgresEnrollmentTokenRepository, service::EnrollmentTokenService,
+};
 use vise_core::hosts::{postgres::PostgresHostRepository, service::HostService};
 use vise_core::sessions::model::{
     Agent, Environment, NewSessionEvent, Session, SessionOutcome, SessionStatus,
@@ -34,15 +38,21 @@ pub fn app_state(pool: PgPool, github_base: &str, github: Option<GithubAuth>) ->
         credentials.insert("github".to_string(), auth.credential_provider());
         GitHubApi::new(github_base.to_string(), auth)
     });
+    let hosts = Arc::new(HostService::new(PostgresHostRepository::new(pool.clone())));
     AppState {
         sessions: Arc::new(SessionService::new(PostgresSessionRepository::new(
             pool.clone(),
         ))),
-        hosts: Arc::new(HostService::new(PostgresHostRepository::new(pool.clone()))),
-        workspaces: Arc::new(PostgresWorkspaceRepository::new(pool)),
+        hosts: hosts.clone(),
+        workspaces: Arc::new(PostgresWorkspaceRepository::new(pool.clone())),
         workspace: WorkspaceId::DEFAULT,
+        enrollment: Arc::new(EnrollmentTokenService::new(
+            PostgresEnrollmentTokenRepository::new(pool),
+            hosts,
+        )),
         credentials,
         github,
+        caller: Arc::new(OpenAccess),
     }
 }
 
@@ -63,13 +73,14 @@ pub fn github_env(repo: &str) -> Environment {
     }
 }
 
-/// Enroll a host in the state's workspace. Claims derive their scope from
-/// the host row, so a session can only be driven through a real host.
+/// Enroll a host in the default workspace, where the `OpenAccess` caller
+/// of `app_state` acts. Claims derive their scope from the host row, so a
+/// session can only be driven through a real host.
 pub async fn enrolled_host(state: &AppState) -> vise_core::hosts::model::Host {
     let name = vise_core::id::new_id("test-host");
     state
         .hosts
-        .enroll(state.workspace.clone(), name)
+        .enroll(WorkspaceId::DEFAULT, name)
         .await
         .unwrap()
         .host
@@ -86,7 +97,7 @@ pub async fn finished_session(
     let session = state
         .sessions
         .create(
-            state.workspace.clone(),
+            WorkspaceId::DEFAULT,
             agent(),
             github_env("acme/widgets"),
             "do the thing".into(),

@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand};
 use futures::StreamExt;
 use serde_json::Value;
 use vise_client::{
-    Client as ViseClient,
+    Client as ViseClient, ClientInfo,
     types::{Agent, CreateSessionRequest, Environment, FollowUpRequest, Session},
 };
 
@@ -20,6 +20,11 @@ struct Cli {
     /// http://localhost:3000.
     #[arg(short, long, env = "VISE_URL")]
     url: Option<String>,
+
+    /// API token, when the server sets VISE_API_TOKEN. Falls back to
+    /// VISE_API_TOKEN in ~/.vise/.env.
+    #[arg(long, env = "VISE_API_TOKEN", hide_env_values = true)]
+    api_token: Option<String>,
 
     #[command(subcommand)]
     command: Command,
@@ -79,6 +84,22 @@ enum HostCommand {
         #[arg(short, long)]
         follow: bool,
     },
+
+    /// Exchange an enrollment token (venroll_...) for this machine's own
+    /// host token (shown exactly once); the host is ephemeral
+    Enroll {
+        /// Enrollment token secret (venroll_...)
+        #[arg(long, env = "VISE_ENROLL_TOKEN", hide_env_values = true)]
+        token: String,
+
+        /// Prefix for the generated host name (default: "host")
+        #[arg(long)]
+        name_prefix: Option<String>,
+
+        /// Print only the vhost_ token on stdout (for scripts)
+        #[arg(long)]
+        token_only: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -94,6 +115,35 @@ enum HostsCommand {
         /// Print only the token on stdout (for scripts)
         #[arg(long)]
         token_only: bool,
+    },
+
+    /// Manage reusable enrollment tokens (venroll_...) for ephemeral hosts
+    Tokens {
+        #[command(subcommand)]
+        command: TokensCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum TokensCommand {
+    /// List enrollment tokens (never shows secrets)
+    Ls,
+
+    /// Mint an enrollment token and print its secret (shown exactly once)
+    Create {
+        /// Maximum number of hosts this token may enroll (default: unlimited)
+        #[arg(long)]
+        max_uses: Option<i64>,
+
+        /// Print only the secret on stdout (for scripts)
+        #[arg(long)]
+        token_only: bool,
+    },
+
+    /// Revoke an enrollment token; hosts it already enrolled keep working
+    Revoke {
+        /// Enrollment token ID (enr_...)
+        token: String,
     },
 }
 
@@ -185,8 +235,10 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let paths = host::Paths::from_env()?;
-    let url = host::resolve_url(cli.url.as_deref(), &host::load_env(&paths)?);
-    let client = ViseClient::new(&url);
+    let env = host::load_env(&paths)?;
+    let url = host::resolve_url(cli.url.as_deref(), &env);
+    let api_token = host::resolve_api_token(cli.api_token.as_deref(), &env);
+    let client = ViseClient::new_with_client(&url, http_client(api_token.as_deref())?);
 
     match cli.command {
         Command::Sessions { command } => match command {
@@ -312,6 +364,42 @@ async fn main() -> anyhow::Result<()> {
                     enrolled.token, enrolled.token
                 );
             }
+
+            HostsCommand::Tokens { command } => match command {
+                TokensCommand::Ls => {
+                    let tokens = client.list_enrollment_tokens().await?.into_inner();
+                    println!("{}", serde_json::to_string_pretty(&tokens)?);
+                }
+
+                TokensCommand::Create {
+                    max_uses,
+                    token_only,
+                } => {
+                    let minted = client
+                        .mint_enrollment_token(&vise_client::types::MintEnrollmentTokenRequest {
+                            max_uses,
+                        })
+                        .await?
+                        .into_inner();
+
+                    if token_only {
+                        println!("{}", minted.secret);
+                        return Ok(());
+                    }
+
+                    println!("{}", serde_json::to_string_pretty(&minted.token)?);
+                    eprintln!("\nsecret (shown once — save it):\n{}", minted.secret);
+                    eprintln!(
+                        "\nenroll a booting host with:\n  vise host enroll --token {}",
+                        minted.secret
+                    );
+                }
+
+                TokensCommand::Revoke { token } => {
+                    let revoked = client.revoke_enrollment_token(&token).await?.into_inner();
+                    println!("{}", serde_json::to_string_pretty(&revoked)?);
+                }
+            },
         },
 
         Command::Host { command } => match command {
@@ -336,10 +424,49 @@ async fn main() -> anyhow::Result<()> {
             }
 
             HostCommand::Logs { lines, follow } => host::logs(&paths, lines, follow)?,
+
+            HostCommand::Enroll {
+                token,
+                name_prefix,
+                token_only,
+            } => {
+                let enrolled = client
+                    .exchange_enrollment_token(
+                        &vise_client::types::ExchangeEnrollmentTokenRequest { token, name_prefix },
+                    )
+                    .await?
+                    .into_inner();
+
+                if token_only {
+                    println!("{}", enrolled.token);
+                    return Ok(());
+                }
+
+                println!("{}", serde_json::to_string_pretty(&enrolled.host)?);
+                eprintln!("\ntoken (shown once — save it):\n{}", enrolled.token);
+                eprintln!(
+                    "\nrun the host with:\n  VISE_HOST_TOKEN={} vise host start",
+                    enrolled.token
+                );
+            }
         },
     }
 
     Ok(())
+}
+
+/// HTTP client for the API. With an API token, every request (including the
+/// SSE stream) carries it as a bearer credential.
+fn http_client(api_token: Option<&str>) -> anyhow::Result<reqwest::Client> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let Some(token) = api_token {
+        let mut value = reqwest::header::HeaderValue::try_from(format!("Bearer {token}"))?;
+        value.set_sensitive(true);
+        headers.insert(reqwest::header::AUTHORIZATION, value);
+    }
+    Ok(reqwest::Client::builder()
+        .default_headers(headers)
+        .build()?)
 }
 
 async fn watch_session(
@@ -350,7 +477,7 @@ async fn watch_session(
 ) -> anyhow::Result<()> {
     let url = format!("{base_url}/sessions/{session_id}/events/stream?after_seq={after_seq}");
 
-    let response = reqwest::get(&url).await?.error_for_status()?;
+    let response = client.client().get(&url).send().await?.error_for_status()?;
     let mut body = response.bytes_stream();
     let mut buffer = String::new();
 

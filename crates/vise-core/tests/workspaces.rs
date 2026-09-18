@@ -40,6 +40,7 @@ async fn enroll(pool: &PgPool, workspace: &WorkspaceId, name: &str) -> anyhow::R
         id: vise_core::id::new_id("host"),
         workspace_id: workspace.clone(),
         name: name.to_string(),
+        ephemeral: false,
         last_seen_at: None,
         created_at: Utc::now(),
     };
