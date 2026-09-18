@@ -5,7 +5,7 @@
 //! launchd/systemd unit. All state lives under `~/.vise` (override with
 //! `VISE_HOME`), which `scripts/install.sh` also populates:
 //!
-//! - `.env`: `KEY=VALUE` config (`VISE_URL`, `VISE_HOST_TOKEN`, ...)
+//! - `.env`: `KEY=VALUE` config (`VISE_URL`, `VISE_API_TOKEN`, `VISE_HOST_TOKEN`, ...)
 //! - `bin/`: installed `vise` and `vise-host` binaries
 //! - `host.pid`: pid of the running `vise-host`
 //! - `logs/host.log`: combined stdout/stderr of `vise-host`
@@ -121,6 +121,17 @@ pub fn resolve_url(explicit: Option<&str>, env: &BTreeMap<String, String>) -> St
         .or_else(|| env.get("VISE_URL").cloned())
         .filter(|url| !url.is_empty())
         .unwrap_or_else(|| DEFAULT_URL.to_string())
+}
+
+/// API token precedence: explicit (`--api-token` flag or `VISE_API_TOKEN` env
+/// var), then `VISE_API_TOKEN` in `~/.vise/.env`. `None` when neither is set:
+/// the server only requires one when it was started with `VISE_API_TOKEN`.
+pub fn resolve_api_token(explicit: Option<&str>, env: &BTreeMap<String, String>) -> Option<String> {
+    explicit
+        .map(str::to_string)
+        .or_else(|| env.get("VISE_API_TOKEN").cloned())
+        .map(|token| token.trim().to_string())
+        .filter(|token| !token.is_empty())
 }
 
 /// Find the `vise-host` binary: an explicit path (`--bin` / `VISE_HOST_BIN`),
@@ -457,6 +468,20 @@ VISE_URL=http://override:1
         assert_eq!(resolve_url(Some("http://flag:2"), &env), "http://flag:2");
         env.insert("VISE_URL".to_string(), String::new());
         assert_eq!(resolve_url(None, &env), DEFAULT_URL);
+    }
+
+    #[test]
+    fn resolve_api_token_precedence() {
+        let mut env = BTreeMap::new();
+        assert_eq!(resolve_api_token(None, &env), None);
+        env.insert("VISE_API_TOKEN".to_string(), " file-token ".to_string());
+        assert_eq!(resolve_api_token(None, &env).as_deref(), Some("file-token"));
+        assert_eq!(
+            resolve_api_token(Some("flag-token"), &env).as_deref(),
+            Some("flag-token")
+        );
+        env.insert("VISE_API_TOKEN".to_string(), String::new());
+        assert_eq!(resolve_api_token(None, &env), None);
     }
 
     #[test]

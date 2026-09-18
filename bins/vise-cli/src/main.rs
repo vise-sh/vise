@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand};
 use futures::StreamExt;
 use serde_json::Value;
 use vise_client::{
-    Client as ViseClient,
+    Client as ViseClient, ClientInfo,
     types::{Agent, CreateSessionRequest, Environment, FollowUpRequest, Session},
 };
 
@@ -20,6 +20,11 @@ struct Cli {
     /// http://localhost:3000.
     #[arg(short, long, env = "VISE_URL")]
     url: Option<String>,
+
+    /// API token, when the server sets VISE_API_TOKEN. Falls back to
+    /// VISE_API_TOKEN in ~/.vise/.env.
+    #[arg(long, env = "VISE_API_TOKEN", hide_env_values = true)]
+    api_token: Option<String>,
 
     #[command(subcommand)]
     command: Command,
@@ -185,8 +190,10 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let paths = host::Paths::from_env()?;
-    let url = host::resolve_url(cli.url.as_deref(), &host::load_env(&paths)?);
-    let client = ViseClient::new(&url);
+    let env = host::load_env(&paths)?;
+    let url = host::resolve_url(cli.url.as_deref(), &env);
+    let api_token = host::resolve_api_token(cli.api_token.as_deref(), &env);
+    let client = ViseClient::new_with_client(&url, http_client(api_token.as_deref())?);
 
     match cli.command {
         Command::Sessions { command } => match command {
@@ -342,6 +349,20 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// HTTP client for the API. With an API token, every request (including the
+/// SSE stream) carries it as a bearer credential.
+fn http_client(api_token: Option<&str>) -> anyhow::Result<reqwest::Client> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let Some(token) = api_token {
+        let mut value = reqwest::header::HeaderValue::try_from(format!("Bearer {token}"))?;
+        value.set_sensitive(true);
+        headers.insert(reqwest::header::AUTHORIZATION, value);
+    }
+    Ok(reqwest::Client::builder()
+        .default_headers(headers)
+        .build()?)
+}
+
 async fn watch_session(
     client: &ViseClient,
     base_url: &str,
@@ -350,7 +371,7 @@ async fn watch_session(
 ) -> anyhow::Result<()> {
     let url = format!("{base_url}/sessions/{session_id}/events/stream?after_seq={after_seq}");
 
-    let response = reqwest::get(&url).await?.error_for_status()?;
+    let response = client.client().get(&url).send().await?.error_for_status()?;
     let mut body = response.bytes_stream();
     let mut buffer = String::new();
 
