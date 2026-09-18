@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE sessions\n            SET lease_expires_at = now() + interval '60 seconds',\n                updated_at = now()\n            WHERE id = $2 AND host_id = $1 AND status = 'running'\n            RETURNING cancel_requested\n            ",
+  "query": "\n            UPDATE sessions\n            SET lease_expires_at = now() + interval '60 seconds',\n                updated_at = now()\n            WHERE id = $2 AND host_id = $1 AND status = 'running'\n              AND workspace_id = (SELECT workspace_id FROM hosts WHERE id = $1)\n            RETURNING cancel_requested\n            ",
   "describe": {
     "columns": [
       {
@@ -25,5 +25,5 @@
       false
     ]
   },
-  "hash": "c0efcc04df0001f5949a960286fca82b8aebe705c187795f6b25cd96e527f076"
+  "hash": "76bbfb50657edaced18662c80d6f829bd76055a307ff8993a6eac1381e15428f"
 }

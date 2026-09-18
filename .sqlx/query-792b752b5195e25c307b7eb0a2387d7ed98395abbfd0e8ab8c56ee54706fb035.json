@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, name, last_seen_at, created_at\n            FROM hosts\n            ORDER BY created_at\n            ",
+  "query": "\n            UPDATE hosts\n            SET last_seen_at = now()\n            WHERE token_hash = $1\n            RETURNING id, workspace_id, name, last_seen_at, created_at\n            ",
   "describe": {
     "columns": [
       {
@@ -16,6 +16,17 @@
       },
       {
         "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "hosts",
+            "name": "workspace_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
         "name": "name",
         "type_info": "Text",
         "origin": {
@@ -26,7 +37,7 @@
         }
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "last_seen_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -37,7 +48,7 @@
         }
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -49,14 +60,17 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Text"
+      ]
     },
     "nullable": [
+      false,
       false,
       false,
       true,
       false
     ]
   },
-  "hash": "1c42cffeeede19aa5702b683b6f171298df77074eb054e34e5fb76adad09118a"
+  "hash": "792b752b5195e25c307b7eb0a2387d7ed98395abbfd0e8ab8c56ee54706fb035"
 }

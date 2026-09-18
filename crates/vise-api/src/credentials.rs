@@ -90,11 +90,13 @@ impl CredentialProvider for PatCredentialProvider {
 pub(crate) mod test_support {
     use chrono::Utc;
     use vise_core::sessions::model::{Agent, Environment, Session, SessionStatus};
+    use vise_core::workspaces::model::WorkspaceId;
 
     /// A running session with the given environment, for provider tests.
     pub(crate) fn session(kind: &str, repo: Option<&str>) -> Session {
         Session {
             id: "ses_test".into(),
+            workspace_id: WorkspaceId::DEFAULT,
             agent: Agent {
                 harness: "echo".into(),
                 model: String::new(),

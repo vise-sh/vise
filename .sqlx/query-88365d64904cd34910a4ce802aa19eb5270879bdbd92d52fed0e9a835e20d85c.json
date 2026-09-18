@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE hosts\n            SET last_seen_at = now()\n            WHERE token_hash = $1\n            RETURNING id, name, last_seen_at, created_at\n            ",
+  "query": "\n            SELECT id, name, settings, created_at\n            FROM workspaces\n            WHERE id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -9,7 +9,7 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "hosts",
+            "table": "workspaces",
             "name": "id"
           }
         }
@@ -20,19 +20,19 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "hosts",
+            "table": "workspaces",
             "name": "name"
           }
         }
       },
       {
         "ordinal": 2,
-        "name": "last_seen_at",
-        "type_info": "Timestamptz",
+        "name": "settings",
+        "type_info": "Jsonb",
         "origin": {
           "Table": {
-            "table": "hosts",
-            "name": "last_seen_at"
+            "table": "workspaces",
+            "name": "settings"
           }
         }
       },
@@ -42,7 +42,7 @@
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
-            "table": "hosts",
+            "table": "workspaces",
             "name": "created_at"
           }
         }
@@ -56,9 +56,9 @@
     "nullable": [
       false,
       false,
-      true,
+      false,
       false
     ]
   },
-  "hash": "867fdc36422f1b44886b329c61b150651f3087193d4781dbc18c052b2cee90f4"
+  "hash": "88365d64904cd34910a4ce802aa19eb5270879bdbd92d52fed0e9a835e20d85c"
 }

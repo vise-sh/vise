@@ -208,10 +208,15 @@
           },
           "name": {
             "type": "string"
+          },
+          "workspace_id": {
+            "$ref": "#/components/schemas/WorkspaceId",
+            "description": "The workspace this host serves. It only ever claims sessions from\nthe same workspace."
           }
         },
         "required": [
           "id",
+          "workspace_id",
           "name",
           "created_at"
         ],
@@ -410,10 +415,15 @@
           "updated_at": {
             "format": "date-time",
             "type": "string"
+          },
+          "workspace_id": {
+            "$ref": "#/components/schemas/WorkspaceId",
+            "description": "The workspace this session belongs to. Only hosts enrolled in the\nsame workspace can claim it."
           }
         },
         "required": [
           "id",
+          "workspace_id",
           "agent",
           "environment",
           "input",
@@ -475,6 +485,10 @@
           "failed",
           "cancelled"
         ],
+        "type": "string"
+      },
+      "WorkspaceId": {
+        "description": "Identifies the workspace a host or session belongs to.",
         "type": "string"
       }
     }
