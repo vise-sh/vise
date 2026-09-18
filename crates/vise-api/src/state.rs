@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use axum::extract::FromRef;
 use vise_core::hosts::{postgres::PostgresHostRepository, service::HostService};
 use vise_core::sessions::{postgres::PostgresSessionRepository, service::SessionService};
+
+use crate::auth::CallerExtractor;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -13,4 +16,14 @@ pub struct AppState {
     /// Read-only GitHub client for PR tracking and follow-up composition;
     /// `None` when neither the GitHub App nor a PAT is configured.
     pub github: Option<crate::github::GitHubApi>,
+    /// Resolves the caller of user-facing routes (sessions, host enrollment).
+    /// `vise-server` uses [`crate::auth::from_env`]; an external composition
+    /// can supply its own [`CallerExtractor`].
+    pub caller: Arc<dyn CallerExtractor>,
+}
+
+impl FromRef<AppState> for Arc<dyn CallerExtractor> {
+    fn from_ref(state: &AppState) -> Self {
+        state.caller.clone()
+    }
 }

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use sqlx::PgPool;
 use vise_api::AppState;
+use vise_api::auth::OpenAccess;
 use vise_api::credentials::CredentialProvider;
 use vise_api::github::{GitHubApi, GithubAuth};
 use vise_core::hosts::{postgres::PostgresHostRepository, service::HostService};
@@ -40,6 +41,7 @@ pub fn app_state(pool: PgPool, github_base: &str, github: Option<GithubAuth>) ->
         hosts: Arc::new(HostService::new(PostgresHostRepository::new(pool))),
         credentials,
         github,
+        caller: Arc::new(OpenAccess),
     }
 }
 

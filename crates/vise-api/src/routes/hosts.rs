@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::AppState;
+use crate::auth::AuthedCaller;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -47,7 +48,7 @@ impl FromRequestParts<AppState> for AuthedHost {
     }
 }
 
-// enrollment & fleet
+// enrollment & fleet (user-facing: resolved through `AppState::caller`)
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct EnrollHostRequest {
@@ -66,17 +67,20 @@ pub struct EnrollHostResponse {
     path = "/hosts",
     operation_id = "enroll_host",
     tag = "hosts",
+    security(("api_token" = []), ()),
     request_body = EnrollHostRequest,
     responses(
         (
             status = 201,
             description = "Host enrolled; the token is returned exactly once",
             body = EnrollHostResponse
-        )
+        ),
+        (status = 401, description = "Missing or invalid API token")
     )
 )]
 pub async fn enroll_host(
     State(state): State<AppState>,
+    _caller: AuthedCaller,
     Json(request): Json<EnrollHostRequest>,
 ) -> Result<(StatusCode, Json<EnrollHostResponse>), StatusCode> {
     let enrolled = state
@@ -99,16 +103,19 @@ pub async fn enroll_host(
     path = "/hosts",
     operation_id = "list_hosts",
     tag = "hosts",
+    security(("api_token" = []), ()),
     responses(
         (
             status = 200,
             description = "List all enrolled hosts",
             body = [vise_core::hosts::model::Host]
-        )
+        ),
+        (status = 401, description = "Missing or invalid API token")
     )
 )]
 pub async fn list_hosts(
     State(state): State<AppState>,
+    _caller: AuthedCaller,
 ) -> Result<Json<Vec<vise_core::hosts::model::Host>>, StatusCode> {
     let hosts = state
         .hosts

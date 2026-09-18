@@ -105,11 +105,29 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(poller.run_forever());
     }
 
+    // Caller identity for user-facing routes: a static bearer token when
+    // VISE_API_TOKEN is set, otherwise open (single-user local install).
+    let caller: Arc<dyn vise_api::auth::CallerExtractor> =
+        match vise_api::auth::StaticToken::from_env() {
+            Some(token) => {
+                tracing::info!("api token configured; user-facing routes require a bearer token");
+                Arc::new(token)
+            }
+            None => {
+                tracing::warn!(
+                    "{} unset; user-facing routes accept unauthenticated requests",
+                    vise_api::auth::API_TOKEN_ENV
+                );
+                Arc::new(vise_api::auth::OpenAccess)
+            }
+        };
+
     let state = AppState {
         sessions,
         hosts,
         credentials,
         github,
+        caller,
     };
 
     let app = app(state);

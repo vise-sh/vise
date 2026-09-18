@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::AppState;
+use crate::auth::AuthedCaller;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -54,16 +55,19 @@ pub struct FollowUpRequest {
     path = "/sessions",
     operation_id = "list_sessions",
     tag = "sessions",
+    security(("api_token" = []), ()),
     responses(
         (
             status = 200,
             description = "List all sessions",
             body = ListSessionsResponse
-        )
+        ),
+        (status = 401, description = "Missing or invalid API token")
     )
 )]
 pub async fn list_sessions(
     State(state): State<AppState>,
+    _caller: AuthedCaller,
 ) -> Result<Json<ListSessionsResponse>, StatusCode> {
     let sessions = state
         .sessions
@@ -82,6 +86,7 @@ pub async fn list_sessions(
     path = "/sessions/{id}",
     operation_id = "get_session",
     tag = "sessions",
+    security(("api_token" = []), ()),
     params(
         ("id" = String, Path, description = "Session ID")
     ),
@@ -90,11 +95,13 @@ pub async fn list_sessions(
             status = 200,
             description = "Get a session",
             body = vise_core::sessions::model::Session
-        )
+        ),
+        (status = 401, description = "Missing or invalid API token")
     )
 )]
 pub async fn get_session(
     State(state): State<AppState>,
+    _caller: AuthedCaller,
     Path(id): Path<String>,
 ) -> Result<Json<vise_core::sessions::model::Session>, StatusCode> {
     let session = state
@@ -112,6 +119,7 @@ pub async fn get_session(
     path = "/sessions",
     operation_id = "create_session",
     tag = "sessions",
+    security(("api_token" = []), ()),
     request_body = CreateSessionRequest,
     responses(
         (
@@ -119,11 +127,13 @@ pub async fn get_session(
             description = "Session created",
             body = vise_core::sessions::model::Session
         ),
+        (status = 401, description = "Missing or invalid API token"),
         (status = 422, description = "Invalid environment")
     )
 )]
 pub async fn create_session(
     State(state): State<AppState>,
+    _caller: AuthedCaller,
     Json(request): Json<CreateSessionRequest>,
 ) -> Result<(StatusCode, Json<vise_core::sessions::model::Session>), StatusCode> {
     if let Err(reason) = request.environment.validate() {
@@ -145,6 +155,7 @@ pub async fn create_session(
     path = "/sessions/{id}/follow-up",
     operation_id = "follow_up_session",
     tag = "sessions",
+    security(("api_token" = []), ()),
     params(
         ("id" = String, Path, description = "Session ID of the session (or follow-up) whose PR to address")
     ),
@@ -155,6 +166,7 @@ pub async fn create_session(
             description = "Follow-up session created, targeting the PR's head branch",
             body = vise_core::sessions::model::Session
         ),
+        (status = 401, description = "Missing or invalid API token"),
         (status = 404, description = "Session not found"),
         (status = 409, description = "The PR is already merged or closed"),
         (status = 422, description = "The session did not open a pull request"),
@@ -164,6 +176,7 @@ pub async fn create_session(
 )]
 pub async fn follow_up_session(
     State(state): State<AppState>,
+    _caller: AuthedCaller,
     Path(id): Path<String>,
     Json(request): Json<FollowUpRequest>,
 ) -> Result<(StatusCode, Json<vise_core::sessions::model::Session>), StatusCode> {
@@ -267,6 +280,7 @@ pub struct EventsQuery {
     path = "/sessions/{id}/events",
     operation_id = "get_events",
     tag = "sessions",
+    security(("api_token" = []), ()),
     params(
         ("id" = String, Path, description = "Session ID"),
         ("after_seq" = Option<i64>, Query, description = "Only return events with seq greater than this"),
@@ -277,11 +291,13 @@ pub struct EventsQuery {
             status = 200,
             description = "Events retrieved",
             body = [vise_core::sessions::model::SessionEvent]
-        )
+        ),
+        (status = 401, description = "Missing or invalid API token")
     )
 )]
 pub async fn get_events(
     State(state): State<AppState>,
+    _caller: AuthedCaller,
     Path(id): Path<String>,
     Query(query): Query<EventsQuery>,
 ) -> Result<Json<Vec<vise_core::sessions::model::SessionEvent>>, StatusCode> {
@@ -303,6 +319,7 @@ pub async fn get_events(
     path = "/sessions/{id}/cancel",
     operation_id = "cancel_session",
     tag = "sessions",
+    security(("api_token" = []), ()),
     params(
         ("id" = String, Path, description = "Session ID")
     ),
@@ -312,12 +329,14 @@ pub async fn get_events(
             description = "Cancellation requested (pending sessions are cancelled immediately)",
             body = vise_core::sessions::model::Session
         ),
+        (status = 401, description = "Missing or invalid API token"),
         (status = 404, description = "Session not found"),
         (status = 409, description = "Session already finished")
     )
 )]
 pub async fn cancel_session(
     State(state): State<AppState>,
+    _caller: AuthedCaller,
     Path(id): Path<String>,
 ) -> Result<Json<vise_core::sessions::model::Session>, StatusCode> {
     let session = state
@@ -380,6 +399,7 @@ fn is_tracking_pr(session: &vise_core::sessions::model::Session) -> bool {
 /// until the PR is merged or closed), closing with a `done` event.
 pub async fn stream_events(
     State(state): State<AppState>,
+    _caller: AuthedCaller,
     Path(id): Path<String>,
     Query(query): Query<EventsQuery>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
