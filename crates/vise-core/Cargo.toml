@@ -1,5 +1,6 @@
 [package]
 name = "vise-core"
+description = "Domain model, session state machine and Postgres repositories for vise"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
