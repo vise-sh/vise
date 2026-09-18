@@ -36,7 +36,13 @@ async fn embedded_migrator_creates_schema_from_scratch(pool: PgPool) {
     .fetch_all(&pool)
     .await
     .unwrap();
-    for table in ["hosts", "session_events", "sessions", "workspaces"] {
+    for table in [
+        "enrollment_tokens",
+        "hosts",
+        "session_events",
+        "sessions",
+        "workspaces",
+    ] {
         assert!(
             tables.iter().any(|t| t == table),
             "missing table {table}: {tables:?}"
@@ -96,6 +102,7 @@ async fn workspace_migration_backfills_existing_rows_to_default(pool: PgPool) {
     assert_eq!(
         nullable,
         vec![
+            ("enrollment_tokens".to_string(), "NO".to_string()),
             ("hosts".to_string(), "NO".to_string()),
             ("sessions".to_string(), "NO".to_string())
         ]
@@ -142,4 +149,65 @@ async fn workspace_migration_backfills_existing_rows_to_default(pool: PgPool) {
         duplicate.is_err(),
         "same name in the same workspace must collide"
     );
+}
+
+/// A database from before enrollment tokens existed (migrations 0001-0002)
+/// with hosts in it: the enrollment migration must leave every existing host
+/// non-ephemeral and make `ephemeral` NOT NULL with a false default.
+#[sqlx::test(migrations = false)]
+async fn enrollment_migration_leaves_existing_hosts_non_ephemeral(pool: PgPool) {
+    vise_core::MIGRATOR.run_to(2, &pool).await.unwrap();
+
+    sqlx::raw_sql(
+        r#"
+        INSERT INTO hosts (id, workspace_id, name, token_hash, created_at)
+        VALUES ('host_1', 'default', 'box', 'hash_1', now());
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    vise_core::MIGRATOR.run(&pool).await.unwrap();
+
+    let ephemeral: bool = sqlx::query_scalar("SELECT ephemeral FROM hosts WHERE id = 'host_1'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(!ephemeral, "pre-existing hosts must stay non-ephemeral");
+
+    let (is_nullable, column_default): (String, Option<String>) = sqlx::query_as(
+        "SELECT is_nullable, column_default FROM information_schema.columns
+         WHERE table_name = 'hosts' AND column_name = 'ephemeral'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(is_nullable, "NO");
+    assert_eq!(column_default.as_deref(), Some("false"));
+
+    // A token must belong to an existing workspace and hash uniquely.
+    sqlx::raw_sql(
+        r#"
+        INSERT INTO enrollment_tokens (id, workspace_id, token_hash, created_at)
+        VALUES ('enr_1', 'default', 'thash_1', now());
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let bad_workspace = sqlx::query(
+        "INSERT INTO enrollment_tokens (id, workspace_id, token_hash, created_at)
+         VALUES ('enr_2', 'ws_missing', 'thash_2', now())",
+    )
+    .execute(&pool)
+    .await;
+    assert!(bad_workspace.is_err(), "unknown workspace must be rejected");
+    let dup_hash = sqlx::query(
+        "INSERT INTO enrollment_tokens (id, workspace_id, token_hash, created_at)
+         VALUES ('enr_3', 'default', 'thash_1', now())",
+    )
+    .execute(&pool)
+    .await;
+    assert!(dup_hash.is_err(), "token hashes must be unique");
 }

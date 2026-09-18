@@ -19,6 +19,7 @@ pub fn app(state: AppState) -> Router {
     Router::<AppState>::new()
         .merge(routes::sessions())
         .merge(routes::hosts())
+        .merge(routes::enrollment())
         .merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", openapi::ApiDoc::openapi()))
         .layer(
             TraceLayer::new_for_http()

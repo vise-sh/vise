@@ -113,6 +113,46 @@
         ],
         "type": "object"
       },
+      "EnrollmentToken": {
+        "description": "A reusable enrollment token. Carries no secret: only the SHA-256 hash of\nthe `venroll_` secret is stored, and the secret itself is returned once,\nat mint.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "max_uses": {
+            "description": "Maximum number of exchanges; `None` = unlimited.",
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "revoked_at": {
+            "description": "Set when the token was revoked; a revoked token can no longer be\nexchanged.",
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "uses": {
+            "description": "How many exchanges have succeeded so far.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "workspace_id": {
+            "$ref": "#/components/schemas/WorkspaceId",
+            "description": "The workspace every host enrolled through this token lands in."
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "uses",
+          "created_at"
+        ],
+        "type": "object"
+      },
       "Environment": {
         "properties": {
           "base_branch": {
@@ -132,6 +172,23 @@
         },
         "required": [
           "kind"
+        ],
+        "type": "object"
+      },
+      "ExchangeEnrollmentTokenRequest": {
+        "properties": {
+          "name_prefix": {
+            "description": "Prefix for the generated host name; defaults to \"host\".",
+            "nullable": true,
+            "type": "string"
+          },
+          "token": {
+            "description": "The enrollment secret (`venroll_...`) this host was provisioned with.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
         ],
         "type": "object"
       },
@@ -198,6 +255,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "ephemeral": {
+            "description": "Hosts created by exchanging an enrollment token are ephemeral: the\nserver deletes them once they stop heartbeating. Hosts enrolled by\nhand are not.",
+            "type": "boolean"
+          },
           "id": {
             "type": "string"
           },
@@ -218,6 +279,7 @@
           "id",
           "workspace_id",
           "name",
+          "ephemeral",
           "created_at"
         ],
         "type": "object"
@@ -270,6 +332,33 @@
         },
         "required": [
           "sessions"
+        ],
+        "type": "object"
+      },
+      "MintEnrollmentTokenRequest": {
+        "properties": {
+          "max_uses": {
+            "description": "Maximum number of hosts this token may enroll; omit for unlimited.",
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "MintEnrollmentTokenResponse": {
+        "properties": {
+          "secret": {
+            "description": "The enrollment secret (`venroll_...`). Shown exactly once; store it\nsafely.",
+            "type": "string"
+          },
+          "token": {
+            "$ref": "#/components/schemas/EnrollmentToken"
+          }
+        },
+        "required": [
+          "token",
+          "secret"
         ],
         "type": "object"
       },
@@ -606,6 +695,154 @@
           },
           "401": {
             "description": "Missing or invalid host token"
+          }
+        },
+        "tags": [
+          "hosts"
+        ]
+      }
+    },
+    "/hosts/enrollment-tokens": {
+      "get": {
+        "operationId": "list_enrollment_tokens",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/EnrollmentToken"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "List enrollment tokens (no secrets)"
+          },
+          "401": {
+            "description": "Missing or invalid API token"
+          }
+        },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
+        "tags": [
+          "hosts"
+        ]
+      },
+      "post": {
+        "operationId": "mint_enrollment_token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MintEnrollmentTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MintEnrollmentTokenResponse"
+                }
+              }
+            },
+            "description": "Enrollment token minted; the secret is returned exactly once"
+          },
+          "401": {
+            "description": "Missing or invalid API token"
+          },
+          "422": {
+            "description": "max_uses is not a positive number"
+          }
+        },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
+        "tags": [
+          "hosts"
+        ]
+      }
+    },
+    "/hosts/enrollment-tokens/{id}/revoke": {
+      "post": {
+        "operationId": "revoke_enrollment_token",
+        "parameters": [
+          {
+            "description": "Enrollment token ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentToken"
+                }
+              }
+            },
+            "description": "Token revoked (idempotent)"
+          },
+          "401": {
+            "description": "Missing or invalid API token"
+          },
+          "404": {
+            "description": "No such enrollment token"
+          }
+        },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
+        "tags": [
+          "hosts"
+        ]
+      }
+    },
+    "/hosts/exchange": {
+      "post": {
+        "operationId": "exchange_enrollment_token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExchangeEnrollmentTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollHostResponse"
+                }
+              }
+            },
+            "description": "Ephemeral host enrolled in the token's workspace; the vhost_ token is returned exactly once"
+          },
+          "401": {
+            "description": "Unknown, revoked or exhausted enrollment token"
           }
         },
         "tags": [

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT id, workspace_id, name, last_seen_at, created_at\n            FROM hosts\n            WHERE workspace_id = $1\n            ORDER BY created_at\n            ",
+  "query": "\n            UPDATE hosts\n            SET last_seen_at = now()\n            WHERE token_hash = $1\n            RETURNING id, workspace_id, name, ephemeral, last_seen_at, created_at\n            ",
   "describe": {
     "columns": [
       {
@@ -38,6 +38,17 @@
       },
       {
         "ordinal": 3,
+        "name": "ephemeral",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "hosts",
+            "name": "ephemeral"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
         "name": "last_seen_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -48,7 +59,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -68,9 +79,10 @@
       false,
       false,
       false,
+      false,
       true,
       false
     ]
   },
-  "hash": "650c3fc676193794c39350331a1c2d215aa906c4d024515cfcf4f488376677ff"
+  "hash": "fe846ed52a80462c62255551b10c79d32210d19dcff8af676bdaade1c9d04d83"
 }

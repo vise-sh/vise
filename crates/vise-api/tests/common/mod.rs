@@ -8,6 +8,9 @@ use vise_api::AppState;
 use vise_api::auth::OpenAccess;
 use vise_api::credentials::CredentialProvider;
 use vise_api::github::{GitHubApi, GithubAuth};
+use vise_core::enrollment::{
+    postgres::PostgresEnrollmentTokenRepository, service::EnrollmentTokenService,
+};
 use vise_core::hosts::{postgres::PostgresHostRepository, service::HostService};
 use vise_core::sessions::model::{
     Agent, Environment, NewSessionEvent, Session, SessionOutcome, SessionStatus,
@@ -34,11 +37,16 @@ pub fn app_state(pool: PgPool, github_base: &str, github: Option<GithubAuth>) ->
         credentials.insert("github".to_string(), auth.credential_provider());
         GitHubApi::new(github_base.to_string(), auth)
     });
+    let hosts = Arc::new(HostService::new(PostgresHostRepository::new(pool.clone())));
     AppState {
         sessions: Arc::new(SessionService::new(PostgresSessionRepository::new(
             pool.clone(),
         ))),
-        hosts: Arc::new(HostService::new(PostgresHostRepository::new(pool))),
+        hosts: hosts.clone(),
+        enrollment: Arc::new(EnrollmentTokenService::new(
+            PostgresEnrollmentTokenRepository::new(pool),
+            hosts,
+        )),
         credentials,
         github,
         caller: Arc::new(OpenAccess),

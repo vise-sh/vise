@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM hosts\n            WHERE ephemeral\n              AND COALESCE(last_seen_at, created_at) < $1\n              AND NOT EXISTS (\n                  SELECT 1 FROM sessions\n                  WHERE sessions.host_id = hosts.id\n                    AND sessions.status = 'running'\n              )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b02f49b242cc428c1d67f725e1b66e79a8ce3c9000db19b9f28ce311ea9899a3"
+}

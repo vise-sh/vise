@@ -15,6 +15,14 @@ pub fn new_token(prefix: &str) -> String {
     format!("{prefix}_{}", encode(uuid::Uuid::new_v4()))
 }
 
+/// A short random suffix for generated names (ephemeral host names): the
+/// last 6 characters of a random (v4) UUID's encoding, ~30 bits of entropy.
+/// Collisions are handled by the caller retrying, not by more bits.
+pub fn short_suffix() -> String {
+    let encoded = encode(uuid::Uuid::new_v4());
+    encoded[encoded.len() - 6..].to_string()
+}
+
 fn encode(uuid: uuid::Uuid) -> String {
     let n = u128::from_be_bytes(*uuid.as_bytes());
 
@@ -37,6 +45,14 @@ mod tests {
         // https://github.com/jetify-com/typeid/blob/main/spec/README.md
         let uuid = uuid::Uuid::parse_str("01890a5d-ac96-774b-bcce-b302099a8057").unwrap();
         assert_eq!(encode(uuid), "01h455vb4pex5vsknk084sn02q");
+    }
+
+    #[test]
+    fn short_suffixes_stay_in_the_alphabet() {
+        let suffix = short_suffix();
+        assert_eq!(suffix.len(), 6);
+        assert!(suffix.bytes().all(|byte| ALPHABET.contains(&byte)));
+        assert_ne!(short_suffix(), short_suffix(), "suffixes must be random");
     }
 
     #[test]
