@@ -4,6 +4,7 @@ use super::{
     model::{Session, SessionOutcome, SessionStatus},
     repository::{PrSync, SessionRepository},
 };
+use crate::workspaces::model::WorkspaceId;
 
 pub struct SessionService<R> {
     repository: R,
@@ -21,16 +22,20 @@ where
         Self { repository }
     }
 
-    pub async fn list(&self) -> anyhow::Result<Vec<Session>> {
-        self.repository.list().await
+    pub async fn list(&self, workspace: &WorkspaceId) -> anyhow::Result<Vec<Session>> {
+        self.repository.list(workspace).await
     }
 
-    pub async fn get(&self, id: &str) -> anyhow::Result<Option<Session>> {
-        self.repository.get(id).await
+    pub async fn get(&self, workspace: &WorkspaceId, id: &str) -> anyhow::Result<Option<Session>> {
+        self.repository.get(workspace, id).await
     }
 
+    /// Queue a new session in `workspace`. A follow-up's `parent_session_id`
+    /// must name a session in the same workspace; callers resolve the parent
+    /// with [`get`](Self::get) first, which cannot cross workspaces.
     pub async fn create(
         &self,
+        workspace: WorkspaceId,
         agent: super::model::Agent,
         environment: super::model::Environment,
         input: String,
@@ -40,6 +45,7 @@ where
 
         let session = Session {
             id: crate::id::new_id("ses"),
+            workspace_id: workspace,
             agent,
             environment,
             input,
@@ -64,8 +70,12 @@ where
     /// Walk the `parent_session_id` chain to the session that opened the PR.
     /// PR tracking lives on that root; follow-ups only point at it.
     /// Returns `None` if `id` (or any ancestor) does not exist.
-    pub async fn resolve_tracking_root(&self, id: &str) -> anyhow::Result<Option<Session>> {
-        let Some(mut session) = self.repository.get(id).await? else {
+    pub async fn resolve_tracking_root(
+        &self,
+        workspace: &WorkspaceId,
+        id: &str,
+    ) -> anyhow::Result<Option<Session>> {
+        let Some(mut session) = self.repository.get(workspace, id).await? else {
             return Ok(None);
         };
 
@@ -73,7 +83,7 @@ where
             let Some(parent_id) = session.parent_session_id.clone() else {
                 return Ok(Some(session));
             };
-            match self.repository.get(&parent_id).await? {
+            match self.repository.get(workspace, &parent_id).await? {
                 Some(parent) => session = parent,
                 None => anyhow::bail!("session {} has missing parent {parent_id}", session.id),
             }
@@ -84,15 +94,22 @@ where
 
     pub async fn get_events(
         &self,
+        workspace: &WorkspaceId,
         id: &str,
         after_seq: i64,
         limit: i64,
     ) -> anyhow::Result<Vec<super::model::SessionEvent>> {
-        self.repository.get_events(id, after_seq, limit).await
+        self.repository
+            .get_events(workspace, id, after_seq, limit)
+            .await
     }
 
-    pub async fn request_cancel(&self, id: &str) -> anyhow::Result<Option<Session>> {
-        self.repository.request_cancel(id).await
+    pub async fn request_cancel(
+        &self,
+        workspace: &WorkspaceId,
+        id: &str,
+    ) -> anyhow::Result<Option<Session>> {
+        self.repository.request_cancel(workspace, id).await
     }
 
     pub async fn expire_leases(&self) -> anyhow::Result<u64> {

@@ -21,7 +21,7 @@ fn poller(state: &vise_api::AppState) -> PrPoller<PostgresSessionRepository> {
 async fn pr_events(state: &vise_api::AppState, id: &str) -> Vec<(i64, serde_json::Value)> {
     state
         .sessions
-        .get_events(id, 0, 1000)
+        .get_events(&state.workspace, id, 0, 1000)
         .await
         .unwrap()
         .into_iter()
@@ -60,7 +60,12 @@ async fn first_sync_writes_snapshot_and_transition_events_together(pool: PgPool)
     assert_eq!(report.synced, 1);
     assert_eq!(report.backoff, None);
 
-    let synced = state.sessions.get(&session.id).await.unwrap().unwrap();
+    let synced = state
+        .sessions
+        .get(&state.workspace, &session.id)
+        .await
+        .unwrap()
+        .unwrap();
     let status = synced.pr_status.expect("snapshot written");
     assert_eq!(status.state, PrState::ChangesRequested);
     assert_eq!(status.checks, Some(ChecksState::Failing));
@@ -93,7 +98,7 @@ async fn unchanged_observation_touches_last_synced_at_only(pool: PgPool) {
     poller.tick().await;
     let first = state
         .sessions
-        .get(&session.id)
+        .get(&state.workspace, &session.id)
         .await
         .unwrap()
         .unwrap()
@@ -108,7 +113,7 @@ async fn unchanged_observation_touches_last_synced_at_only(pool: PgPool) {
 
     let second = state
         .sessions
-        .get(&session.id)
+        .get(&state.workspace, &session.id)
         .await
         .unwrap()
         .unwrap()
@@ -201,9 +206,10 @@ async fn merged_and_closed_prs_leave_the_work_list(pool: PgPool) {
 
     let state_of = |id: String| {
         let sessions = state.sessions.clone();
+        let workspace = state.workspace.clone();
         async move {
             sessions
-                .get(&id)
+                .get(&workspace, &id)
                 .await
                 .unwrap()
                 .unwrap()
@@ -254,7 +260,12 @@ async fn persistent_not_found_becomes_sync_error_and_recovers(pool: PgPool) {
     for attempt in 1..SYNC_ERROR_THRESHOLD {
         let report = poller.tick().await;
         assert_eq!(report.skipped, 1, "attempt {attempt} skips");
-        let snapshot = state.sessions.get(&session.id).await.unwrap().unwrap();
+        let snapshot = state
+            .sessions
+            .get(&state.workspace, &session.id)
+            .await
+            .unwrap()
+            .unwrap();
         assert!(
             snapshot.pr_status.is_none(),
             "attempt {attempt} stays quiet"
@@ -263,7 +274,12 @@ async fn persistent_not_found_becomes_sync_error_and_recovers(pool: PgPool) {
 
     let report = poller.tick().await;
     assert_eq!(report.synced, 1);
-    let snapshot = state.sessions.get(&session.id).await.unwrap().unwrap();
+    let snapshot = state
+        .sessions
+        .get(&state.workspace, &session.id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(snapshot.pr_status.unwrap().state, PrState::SyncError);
     assert_eq!(
         pr_events(&state, &session.id).await.last().unwrap().1,
@@ -274,7 +290,12 @@ async fn persistent_not_found_becomes_sync_error_and_recovers(pool: PgPool) {
     let work = state.sessions.pr_tracking_work_list(100).await.unwrap();
     assert_eq!(work.len(), 1);
     poller.tick().await;
-    let snapshot = state.sessions.get(&session.id).await.unwrap().unwrap();
+    let snapshot = state
+        .sessions
+        .get(&state.workspace, &session.id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(snapshot.pr_status.unwrap().state, PrState::Approved);
     assert_eq!(
         pr_events(&state, &session.id).await.last().unwrap().1,
@@ -302,7 +323,7 @@ async fn transient_failures_skip_and_retry(pool: PgPool) {
     assert!(
         state
             .sessions
-            .get(&session.id)
+            .get(&state.workspace, &session.id)
             .await
             .unwrap()
             .unwrap()
@@ -407,7 +428,7 @@ async fn pat_auth_tracks_prs_against_the_configured_api_base(pool: PgPool) {
 
     let status = state
         .sessions
-        .get(&session.id)
+        .get(&state.workspace, &session.id)
         .await
         .unwrap()
         .unwrap()

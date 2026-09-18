@@ -67,7 +67,7 @@ pub async fn list_sessions(
 ) -> Result<Json<ListSessionsResponse>, StatusCode> {
     let sessions = state
         .sessions
-        .list()
+        .list(&state.workspace)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -99,7 +99,7 @@ pub async fn get_session(
 ) -> Result<Json<vise_core::sessions::model::Session>, StatusCode> {
     let session = state
         .sessions
-        .get(&id)
+        .get(&state.workspace, &id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         .and_then(|s| s.ok_or(StatusCode::NOT_FOUND))?;
@@ -133,7 +133,13 @@ pub async fn create_session(
 
     let session = state
         .sessions
-        .create(request.agent, request.environment, request.input, None)
+        .create(
+            state.workspace.clone(),
+            request.agent,
+            request.environment,
+            request.input,
+            None,
+        )
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -173,7 +179,7 @@ pub async fn follow_up_session(
 
     let parent = state
         .sessions
-        .get(&id)
+        .get(&state.workspace, &id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -181,7 +187,7 @@ pub async fn follow_up_session(
     // Tracking lives on the session that opened the PR; follow-ups chain to it.
     let root = state
         .sessions
-        .resolve_tracking_root(&id)
+        .resolve_tracking_root(&state.workspace, &id)
         .await
         .map_err(|error| {
             tracing::error!(session_id = %id, %error, "follow-up root resolution failed");
@@ -247,7 +253,13 @@ pub async fn follow_up_session(
 
     let session = state
         .sessions
-        .create(agent, environment, input, Some(parent.id.clone()))
+        .create(
+            state.workspace.clone(),
+            agent,
+            environment,
+            input,
+            Some(parent.id.clone()),
+        )
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -288,6 +300,7 @@ pub async fn get_events(
     let events = state
         .sessions
         .get_events(
+            &state.workspace,
             &id,
             query.after_seq.unwrap_or(0),
             query.limit.unwrap_or(1000).clamp(1, 10_000),
@@ -322,7 +335,7 @@ pub async fn cancel_session(
 ) -> Result<Json<vise_core::sessions::model::Session>, StatusCode> {
     let session = state
         .sessions
-        .request_cancel(&id)
+        .request_cancel(&state.workspace, &id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -331,7 +344,7 @@ pub async fn cancel_session(
         None => {
             let exists = state
                 .sessions
-                .get(&id)
+                .get(&state.workspace, &id)
                 .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
                 .is_some();
@@ -408,14 +421,19 @@ pub async fn stream_events(
             match cursor
                 .state
                 .sessions
-                .get_events(&cursor.id, cursor.after_seq, 256)
+                .get_events(&cursor.state.workspace, &cursor.id, cursor.after_seq, 256)
                 .await
             {
                 Ok(events) if !events.is_empty() => {
                     cursor.buffer.extend(events);
                 }
 
-                Ok(_) => match cursor.state.sessions.get(&cursor.id).await {
+                Ok(_) => match cursor
+                    .state
+                    .sessions
+                    .get(&cursor.state.workspace, &cursor.id)
+                    .await
+                {
                     Ok(Some(session)) if is_terminal(&session.status) => {
                         if is_tracking_pr(&session) {
                             tokio::time::sleep(Duration::from_millis(1000)).await;

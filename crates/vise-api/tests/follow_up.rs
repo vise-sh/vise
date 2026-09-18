@@ -143,7 +143,12 @@ async fn composes_review_feedback_and_targets_the_head_branch(pool: PgPool) {
     assert!(input.contains("Keep the public API stable."), "{input}");
 
     // Persisted as a normal pending session.
-    let stored = state.sessions.get(&created.id).await.unwrap().unwrap();
+    let stored = state
+        .sessions
+        .get(&state.workspace, &created.id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(stored.input, created.input);
     assert_eq!(stored.parent_session_id.as_deref(), Some(root.id.as_str()));
     assert!(stored.pr_status.is_none(), "tracking stays on the root");
@@ -188,7 +193,7 @@ async fn follow_ups_chain_and_resolve_tracking_to_the_root(pool: PgPool) {
 
     let resolved = state
         .sessions
-        .resolve_tracking_root(second["id"].as_str().unwrap())
+        .resolve_tracking_root(&state.workspace, second["id"].as_str().unwrap())
         .await
         .unwrap()
         .unwrap();

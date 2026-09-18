@@ -81,7 +81,7 @@ pub async fn enroll_host(
 ) -> Result<(StatusCode, Json<EnrollHostResponse>), StatusCode> {
     let enrolled = state
         .hosts
-        .enroll(request.name)
+        .enroll(state.workspace.clone(), request.name)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -112,7 +112,7 @@ pub async fn list_hosts(
 ) -> Result<Json<Vec<vise_core::hosts::model::Host>>, StatusCode> {
     let hosts = state
         .hosts
-        .list()
+        .list(&state.workspace)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -342,9 +342,10 @@ pub async fn issue_credential(
         .get(&request.provider)
         .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
 
+    // Scoped to the host's own workspace, like every other host-driven path.
     let session = state
         .sessions
-        .get(&id)
+        .get(&host.workspace_id, &id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;

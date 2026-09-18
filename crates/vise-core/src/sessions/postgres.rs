@@ -8,6 +8,7 @@ use super::{
     },
     repository::{PrSync, SessionRepository},
 };
+use crate::workspaces::model::WorkspaceId;
 
 pub struct PostgresSessionRepository {
     pool: PgPool,
@@ -21,6 +22,7 @@ impl PostgresSessionRepository {
 
 struct SessionRow {
     id: String,
+    workspace_id: String,
     agent: sqlx::types::Json<Agent>,
     environment: sqlx::types::Json<Environment>,
     input: String,
@@ -43,6 +45,7 @@ impl From<SessionRow> for Session {
     fn from(row: SessionRow) -> Self {
         Session {
             id: row.id,
+            workspace_id: WorkspaceId::new(row.workspace_id),
             agent: row.agent.0,
             environment: row.environment.0,
             input: row.input,
@@ -70,6 +73,7 @@ impl SessionRepository for PostgresSessionRepository {
             r#"
             INSERT INTO sessions (
                 id,
+                workspace_id,
                 agent,
                 environment,
                 input,
@@ -78,10 +82,11 @@ impl SessionRepository for PostgresSessionRepository {
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             "#,
         )
         .bind(&session.id)
+        .bind(session.workspace_id.as_str())
         .bind(sqlx::types::Json(&session.agent))
         .bind(sqlx::types::Json(&session.environment))
         .bind(&session.input)
@@ -95,12 +100,13 @@ impl SessionRepository for PostgresSessionRepository {
         Ok(session)
     }
 
-    async fn get(&self, id: &str) -> anyhow::Result<Option<Session>> {
+    async fn get(&self, workspace: &WorkspaceId, id: &str) -> anyhow::Result<Option<Session>> {
         let row = sqlx::query_as!(
             SessionRow,
             r#"
             SELECT
                 id,
+                workspace_id,
                 agent as "agent: _",
                 environment as "environment: _",
                 input,
@@ -118,8 +124,9 @@ impl SessionRepository for PostgresSessionRepository {
                 created_at,
                 updated_at
             FROM sessions
-            WHERE id = $1
+            WHERE workspace_id = $1 AND id = $2
             "#,
+            workspace.as_str(),
             id
         )
         .fetch_optional(&self.pool)
@@ -128,12 +135,13 @@ impl SessionRepository for PostgresSessionRepository {
         Ok(row.map(Session::from))
     }
 
-    async fn list(&self) -> anyhow::Result<Vec<Session>> {
+    async fn list(&self, workspace: &WorkspaceId) -> anyhow::Result<Vec<Session>> {
         let rows = sqlx::query_as!(
             SessionRow,
             r#"
             SELECT
                 id,
+                workspace_id,
                 agent as "agent: _",
                 environment as "environment: _",
                 input,
@@ -151,8 +159,10 @@ impl SessionRepository for PostgresSessionRepository {
                 created_at,
                 updated_at
             FROM sessions
+            WHERE workspace_id = $1
             ORDER BY created_at DESC
-            "#
+            "#,
+            workspace.as_str()
         )
         .fetch_all(&self.pool)
         .await?;
@@ -160,12 +170,13 @@ impl SessionRepository for PostgresSessionRepository {
         Ok(rows.into_iter().map(Session::from).collect())
     }
 
-    async fn delete(&self, id: &str) -> anyhow::Result<()> {
+    async fn delete(&self, workspace: &WorkspaceId, id: &str) -> anyhow::Result<()> {
         sqlx::query!(
             r#"
             DELETE FROM sessions
-            WHERE id = $1
+            WHERE workspace_id = $1 AND id = $2
             "#,
+            workspace.as_str(),
             id
         )
         .execute(&self.pool)
@@ -176,18 +187,23 @@ impl SessionRepository for PostgresSessionRepository {
 
     async fn get_events(
         &self,
+        workspace: &WorkspaceId,
         id: &str,
         after_seq: i64,
         limit: i64,
     ) -> anyhow::Result<Vec<super::model::SessionEvent>> {
+        // session_events has no workspace column; the join to sessions is
+        // what keeps another workspace's session id from reading these.
         let rows = sqlx::query!(
             r#"
-            SELECT session_id, seq, payload, created_at
-            FROM session_events
-            WHERE session_id = $1 AND seq > $2
-            ORDER BY seq
-            LIMIT $3
+            SELECT e.session_id, e.seq, e.payload, e.created_at
+            FROM session_events e
+            JOIN sessions s ON s.id = e.session_id
+            WHERE s.workspace_id = $1 AND e.session_id = $2 AND e.seq > $3
+            ORDER BY e.seq
+            LIMIT $4
             "#,
+            workspace.as_str(),
             id,
             after_seq,
             limit
@@ -219,12 +235,14 @@ impl SessionRepository for PostgresSessionRepository {
             WHERE id = (
                 SELECT id FROM sessions
                 WHERE status = 'pending'
+                  AND workspace_id = (SELECT workspace_id FROM hosts WHERE id = $1)
                 ORDER BY created_at
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             )
             RETURNING
                 id,
+                workspace_id,
                 agent as "agent: _",
                 environment as "environment: _",
                 input,
@@ -257,6 +275,7 @@ impl SessionRepository for PostgresSessionRepository {
             SET lease_expires_at = now() + interval '60 seconds',
                 updated_at = now()
             WHERE id = $2 AND host_id = $1 AND status = 'running'
+              AND workspace_id = (SELECT workspace_id FROM hosts WHERE id = $1)
             RETURNING cancel_requested
             "#,
             host_id,
@@ -278,6 +297,7 @@ impl SessionRepository for PostgresSessionRepository {
             r#"
             SELECT 1 FROM sessions
             WHERE id = $2 AND host_id = $1 AND status = 'running'
+              AND workspace_id = (SELECT workspace_id FROM hosts WHERE id = $1)
             "#,
             host_id,
             id
@@ -330,8 +350,10 @@ impl SessionRepository for PostgresSessionRepository {
                 finished_at = now(),
                 updated_at = now()
             WHERE id = $2 AND host_id = $1 AND status = 'running'
+              AND workspace_id = (SELECT workspace_id FROM hosts WHERE id = $1)
             RETURNING
                 id,
+                workspace_id,
                 agent as "agent: _",
                 environment as "environment: _",
                 input,
@@ -362,7 +384,11 @@ impl SessionRepository for PostgresSessionRepository {
         Ok(row.map(Session::from))
     }
 
-    async fn request_cancel(&self, id: &str) -> anyhow::Result<Option<Session>> {
+    async fn request_cancel(
+        &self,
+        workspace: &WorkspaceId,
+        id: &str,
+    ) -> anyhow::Result<Option<Session>> {
         let row = sqlx::query_as!(
             SessionRow,
             r#"
@@ -371,9 +397,10 @@ impl SessionRepository for PostgresSessionRepository {
                 status = CASE WHEN status = 'pending' THEN 'cancelled' ELSE status END,
                 finished_at = CASE WHEN status = 'pending' THEN now() ELSE finished_at END,
                 updated_at = now()
-            WHERE id = $1 AND status IN ('pending', 'running')
+            WHERE workspace_id = $1 AND id = $2 AND status IN ('pending', 'running')
             RETURNING
                 id,
+                workspace_id,
                 agent as "agent: _",
                 environment as "environment: _",
                 input,
@@ -391,6 +418,7 @@ impl SessionRepository for PostgresSessionRepository {
                 created_at,
                 updated_at
             "#,
+            workspace.as_str(),
             id
         )
         .fetch_optional(&self.pool)
@@ -423,6 +451,7 @@ impl SessionRepository for PostgresSessionRepository {
             r#"
             SELECT
                 id,
+                workspace_id,
                 agent as "agent: _",
                 environment as "environment: _",
                 input,
@@ -461,6 +490,7 @@ impl SessionRepository for PostgresSessionRepository {
             r#"
             SELECT
                 id,
+                workspace_id,
                 agent as "agent: _",
                 environment as "environment: _",
                 input,

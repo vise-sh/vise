@@ -4,6 +4,7 @@ use sqlx::postgres::PgPoolOptions;
 use vise_api::{AppState, app};
 use vise_core::hosts::{postgres::PostgresHostRepository, service::HostService};
 use vise_core::sessions::{postgres::PostgresSessionRepository, service::SessionService};
+use vise_core::workspaces::model::WorkspaceId;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -105,9 +106,12 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(poller.run_forever());
     }
 
+    // Single-tenant: every host and session lives in the `default`
+    // workspace the migrations seed.
     let state = AppState {
         sessions,
         hosts,
+        workspace: WorkspaceId::DEFAULT,
         credentials,
         github,
     };
