@@ -118,23 +118,6 @@ async fn mint_returns_the_secret_once_and_lists_without_it(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
-async fn mint_rejects_a_nonpositive_use_cap(pool: PgPool) {
-    let (_, enrollment) = services(&pool);
-    assert!(
-        enrollment
-            .mint(WorkspaceId::DEFAULT, Some(0))
-            .await
-            .is_err()
-    );
-    assert!(
-        enrollment
-            .mint(WorkspaceId::DEFAULT, Some(-1))
-            .await
-            .is_err()
-    );
-}
-
-#[sqlx::test(migrations = "./migrations")]
 async fn revoke_is_idempotent_and_workspace_scoped(pool: PgPool) {
     let (_, enrollment) = services(&pool);
     let acme = create_workspace(&pool, "ws_acme").await;

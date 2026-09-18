@@ -57,7 +57,7 @@ async fn mint(state: &AppState, max_uses: Option<i64>) -> serde_json::Value {
 }
 
 #[sqlx::test(migrations = "../vise-core/migrations")]
-async fn minted_token_enrolls_an_ephemeral_host_that_can_claim(pool: PgPool) {
+async fn minted_token_enrolls_an_ephemeral_host_that_runs_an_echo_session(pool: PgPool) {
     let state = open_state(pool);
 
     let minted = mint(&state, Some(2)).await;
@@ -94,6 +94,96 @@ async fn minted_token_enrolls_an_ephemeral_host_that_can_claim(pool: PgPool) {
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body["session"].is_null());
+
+    // A user queues an echo session through the sessions API...
+    let (status, session) = send(
+        &state,
+        "POST",
+        "/sessions",
+        None,
+        Some(serde_json::json!({
+            "agent": {
+                "harness": "echo",
+                "model": "",
+                "instructions": "",
+                "mcp_servers": []
+            },
+            "environment": { "kind": "self_hosted" },
+            "input": "say hello"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{session}");
+    let session_id = session["id"].as_str().unwrap().to_string();
+
+    // ...which the enrolled host claims and runs to completion.
+    let (status, body) = send(
+        &state,
+        "POST",
+        "/hosts/claim",
+        Some(&host_token),
+        Some(serde_json::json!({})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["session"]["id"], session_id.as_str());
+    assert_eq!(body["session"]["status"], "running");
+
+    let (status, body) = send(
+        &state,
+        "POST",
+        &format!("/hosts/sessions/{session_id}/events"),
+        Some(&host_token),
+        Some(serde_json::json!({
+            "events": [{
+                "seq": 1,
+                "payload": { "sessionUpdate": "agent_message_chunk", "text": "hello" }
+            }]
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+
+    let (status, finished) = send(
+        &state,
+        "POST",
+        &format!("/hosts/sessions/{session_id}/finish"),
+        Some(&host_token),
+        Some(serde_json::json!({
+            "status": "completed",
+            "stop_reason": "end_turn",
+            "error": null
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{finished}");
+    assert_eq!(finished["status"], "completed");
+
+    // The user-facing API sees the completed session and its events.
+    let (status, fetched) = send(
+        &state,
+        "GET",
+        &format!("/sessions/{session_id}"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{fetched}");
+    assert_eq!(fetched["status"], "completed");
+
+    let (status, events) = send(
+        &state,
+        "GET",
+        &format!("/sessions/{session_id}/events"),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{events}");
+    let events = events.as_array().unwrap();
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert_eq!(events[0]["seq"], 1);
+    assert_eq!(events[0]["payload"]["text"], "hello");
 
     // Listing counts the use and never echoes secret material.
     let (status, listed) = send(&state, "GET", "/hosts/enrollment-tokens", None, None).await;

@@ -36,17 +36,14 @@ where
         Self { repository, hosts }
     }
 
+    /// Mint an enrollment token in `workspace`. `max_uses`, when given, must
+    /// be positive; the HTTP layer owns that validation (422), like the
+    /// sessions routes do for environments.
     pub async fn mint(
         &self,
         workspace: WorkspaceId,
         max_uses: Option<i64>,
     ) -> anyhow::Result<MintedEnrollmentToken> {
-        if let Some(max_uses) = max_uses
-            && max_uses < 1
-        {
-            anyhow::bail!("max_uses must be at least 1, got {max_uses}");
-        }
-
         let secret = crate::id::new_token("venroll");
 
         let token = EnrollmentToken {
