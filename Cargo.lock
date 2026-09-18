@@ -3780,6 +3780,7 @@ dependencies = [
  "agent-client-protocol",
  "anyhow",
  "async-trait",
+ "chrono",
  "clap",
  "reqwest",
  "serde_json",
@@ -3789,6 +3790,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "vise-client",
+ "wiremock",
 ]
 
 [[package]]

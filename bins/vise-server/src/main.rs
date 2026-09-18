@@ -7,6 +7,8 @@ use vise_core::enrollment::{
 };
 use vise_core::hosts::{postgres::PostgresHostRepository, service::HostService};
 use vise_core::sessions::{postgres::PostgresSessionRepository, service::SessionService};
+use vise_core::workspaces::model::WorkspaceId;
+use vise_core::workspaces::postgres::PostgresWorkspaceRepository;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -36,6 +38,7 @@ async fn main() -> anyhow::Result<()> {
         pool.clone(),
     )));
     let hosts = Arc::new(HostService::new(PostgresHostRepository::new(pool.clone())));
+    let workspaces = Arc::new(PostgresWorkspaceRepository::new(pool.clone()));
     let enrollment = Arc::new(EnrollmentTokenService::new(
         PostgresEnrollmentTokenRepository::new(pool),
         hosts.clone(),
@@ -147,6 +150,8 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         sessions,
         hosts,
+        workspaces,
+        workspace: WorkspaceId::DEFAULT,
         enrollment,
         credentials,
         github,

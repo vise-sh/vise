@@ -140,6 +140,10 @@ pub struct ClaimRequest {
 pub struct ClaimResponse {
     /// The claimed session, or null if there is no pending work.
     pub session: Option<vise_core::sessions::model::Session>,
+    /// The event-fidelity policy of the host's workspace. Under `redacted`
+    /// the host must strip all content strings from session events before
+    /// reporting them.
+    pub event_fidelity: vise_core::workspaces::model::EventFidelity,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -181,6 +185,8 @@ pub async fn claim(
     AuthedHost(host): AuthedHost,
     Json(_request): Json<ClaimRequest>,
 ) -> Result<Json<ClaimResponse>, StatusCode> {
+    use vise_core::workspaces::repository::WorkspaceRepository;
+
     // v1 scheduling is FIFO; capabilities in the request body are not yet matched.
     let session = state
         .sessions
@@ -188,7 +194,20 @@ pub async fn claim(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok(Json(ClaimResponse { session }))
+    // A host only ever claims sessions from its own workspace, so the
+    // workspace's policy applies to whatever was (or will be) claimed. If the
+    // row cannot be read (or is unexpectedly missing despite the host's FK),
+    // fail closed to the restrictive policy: the session above is already
+    // claimed, and an unknown policy must never resolve to full content.
+    let event_fidelity = match state.workspaces.get(&host.workspace_id).await {
+        Ok(Some(workspace)) => workspace.event_fidelity(),
+        Ok(None) | Err(_) => vise_core::workspaces::model::EventFidelity::Redacted,
+    };
+
+    Ok(Json(ClaimResponse {
+        session,
+        event_fidelity,
+    }))
 }
 
 #[utoipa::path(

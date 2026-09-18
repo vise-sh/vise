@@ -128,6 +128,9 @@ async fn minted_token_enrolls_an_ephemeral_host_that_runs_an_echo_session(pool: 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["session"]["id"], session_id.as_str());
     assert_eq!(body["session"]["status"], "running");
+    // Fidelity is resolved from the workspace the enrollment token put the
+    // host in — the default workspace, whose unset policy means `full`.
+    assert_eq!(body["event_fidelity"], "full");
 
     let (status, body) = send(
         &state,

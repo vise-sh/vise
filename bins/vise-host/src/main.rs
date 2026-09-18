@@ -1,5 +1,7 @@
 mod acp;
+mod events;
 mod github;
+mod redact;
 mod runtime;
 
 use std::time::Duration;
@@ -10,8 +12,8 @@ use tokio_util::sync::CancellationToken;
 use vise_client::{
     Client as ViseClient,
     types::{
-        ClaimRequest, FinishRequest, IssueCredentialRequest, NewSessionEvent, ReportEventsRequest,
-        Session, SessionOutcome, SessionStatus,
+        ClaimRequest, EventFidelity, FinishRequest, IssueCredentialRequest, Session,
+        SessionOutcome, SessionStatus,
     },
 };
 
@@ -69,8 +71,8 @@ async fn main() -> anyhow::Result<()> {
 
     loop {
         match claim(&client).await {
-            Ok(Some(session)) => {
-                tracing::info!(session_id = %session.id, harness = %session.agent.harness, "claimed session");
+            Ok(Some((session, fidelity))) => {
+                tracing::info!(session_id = %session.id, harness = %session.agent.harness, ?fidelity, "claimed session");
 
                 let runtime: &dyn SessionRuntime = if session.agent.harness == "echo" {
                     &echo
@@ -79,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
                 };
 
                 if let Err(error) =
-                    run_session(&client, runtime, session, cli.keep_workspaces).await
+                    run_session(&client, runtime, session, fidelity, cli.keep_workspaces).await
                 {
                     tracing::error!(%error, "session run failed");
                 }
@@ -131,21 +133,25 @@ async fn clean_orphaned_workspaces(client: &ViseClient) {
     }
 }
 
-async fn claim(client: &ViseClient) -> anyhow::Result<Option<Session>> {
+async fn claim(client: &ViseClient) -> anyhow::Result<Option<(Session, EventFidelity)>> {
     let response = client
         .claim_session(&ClaimRequest {
             harnesses: vec!["claude-code".to_string()],
             environment_types: vec!["self_hosted".to_string(), "github_repo".to_string()],
         })
-        .await?;
+        .await?
+        .into_inner();
 
-    Ok(response.into_inner().session)
+    Ok(response
+        .session
+        .map(|session| (session, response.event_fidelity)))
 }
 
 async fn run_session(
     client: &ViseClient,
     runtime: &dyn SessionRuntime,
     mut session: Session,
+    fidelity: EventFidelity,
     keep_workspaces: bool,
 ) -> anyhow::Result<()> {
     let workdir = std::env::temp_dir().join("vise-sessions").join(&session.id);
@@ -199,7 +205,12 @@ async fn run_session(
 
     let (events_tx, events_rx) = mpsc::channel::<serde_json::Value>(256);
 
-    let uploader = tokio::spawn(upload_events(client.clone(), session.id.clone(), events_rx));
+    let uploader = tokio::spawn(events::upload_events(
+        client.clone(),
+        session.id.clone(),
+        fidelity,
+        events_rx,
+    ));
 
     let refresher = github_ctx.as_ref().map(|(prepared, _, _)| {
         tokio::spawn(refresh_token_loop(
@@ -434,63 +445,6 @@ async fn heartbeat_loop(client: ViseClient, session_id: String, cancel: Cancella
                 }
 
                 tracing::warn!(%session_id, %error, "heartbeat failed");
-            }
-        }
-    }
-}
-
-async fn upload_events(
-    client: ViseClient,
-    session_id: String,
-    mut events: mpsc::Receiver<serde_json::Value>,
-) -> anyhow::Result<()> {
-    let mut interval = tokio::time::interval(Duration::from_millis(500));
-    let mut seq: i64 = 0;
-    let mut buffer: Vec<NewSessionEvent> = Vec::new();
-    let mut closed = false;
-
-    loop {
-        tokio::select! {
-            message = events.recv(), if !closed => {
-                match message {
-                    Some(payload) => {
-                        seq += 1;
-                        buffer.push(NewSessionEvent { seq, payload });
-                    }
-                    None => closed = true,
-                }
-            }
-
-            _ = interval.tick() => {
-                while let Ok(payload) = events.try_recv() {
-                    seq += 1;
-                    buffer.push(NewSessionEvent { seq, payload });
-                }
-
-                if !buffer.is_empty() {
-                    match client
-                        .report_session_events(
-                            &session_id,
-                            &ReportEventsRequest { events: buffer.clone() },
-                        )
-                        .await
-                    {
-                        Ok(_) => buffer.clear(),
-
-                        Err(error) => {
-                            // 409: session is no longer ours; the events have nowhere to go
-                            if error.status().is_some_and(|s| s.is_client_error()) {
-                                anyhow::bail!("dropping {} events: {error}", buffer.len());
-                            }
-
-                            tracing::warn!(%session_id, %error, "event upload failed, will retry");
-                        }
-                    }
-                }
-
-                if closed && buffer.is_empty() {
-                    return Ok(());
-                }
             }
         }
     }

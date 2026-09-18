@@ -79,6 +79,7 @@ impl Modify for ApiTokenScheme {
         vise_core::sessions::model::SessionEvent,
         vise_core::sessions::model::NewSessionEvent,
         vise_core::hosts::model::Host,
+        vise_core::workspaces::model::EventFidelity,
         vise_core::enrollment::model::EnrollmentToken,
     ))
 )]

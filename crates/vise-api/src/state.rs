@@ -7,6 +7,8 @@ use vise_core::enrollment::{
 };
 use vise_core::hosts::{postgres::PostgresHostRepository, service::HostService};
 use vise_core::sessions::{postgres::PostgresSessionRepository, service::SessionService};
+use vise_core::workspaces::model::WorkspaceId;
+use vise_core::workspaces::postgres::PostgresWorkspaceRepository;
 
 use crate::auth::CallerExtractor;
 
@@ -14,6 +16,14 @@ use crate::auth::CallerExtractor;
 pub struct AppState {
     pub sessions: Arc<SessionService<PostgresSessionRepository>>,
     pub hosts: Arc<HostService<PostgresHostRepository>>,
+    /// Workspace rows, read for per-workspace policy (e.g. event fidelity)
+    /// when a host claims work.
+    pub workspaces: Arc<PostgresWorkspaceRepository>,
+    /// The workspace every user-facing request is scoped to. This server is
+    /// single-tenant, so `vise-server` sets it to [`WorkspaceId::DEFAULT`];
+    /// host-driven routes derive their scope from the authenticated host
+    /// instead.
+    pub workspace: WorkspaceId,
     /// Reusable enrollment tokens and their exchange for ephemeral hosts.
     pub enrollment:
         Arc<EnrollmentTokenService<PostgresEnrollmentTokenRepository, PostgresHostRepository>>,
