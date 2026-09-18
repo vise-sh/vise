@@ -87,14 +87,16 @@ pub struct Workspace {
 
 impl Workspace {
     /// The workspace's event-fidelity policy, read from
-    /// `settings.event_fidelity`. Absent or unrecognized values mean
+    /// `settings.event_fidelity`. An absent setting means
     /// [`EventFidelity::Full`], matching the behavior before the setting
-    /// existed.
+    /// existed. A setting that is present but unrecognized (a typo like
+    /// `"partial"`, a wrong type) fails closed to [`EventFidelity::Redacted`]:
+    /// a mistyped policy must not silently ship full content.
     pub fn event_fidelity(&self) -> EventFidelity {
-        self.settings
-            .get("event_fidelity")
-            .and_then(|value| serde_json::from_value(value.clone()).ok())
-            .unwrap_or_default()
+        match self.settings.get("event_fidelity") {
+            None => EventFidelity::Full,
+            Some(value) => serde_json::from_value(value.clone()).unwrap_or(EventFidelity::Redacted),
+        }
     }
 }
 
@@ -137,14 +139,16 @@ mod tests {
     }
 
     #[test]
-    fn event_fidelity_ignores_unrecognized_values() {
+    fn event_fidelity_fails_closed_on_unrecognized_values() {
+        // A present-but-bogus policy (typo, wrong type) must not silently
+        // ship full content.
         for bogus in [
             serde_json::json!({ "event_fidelity": "partial" }),
             serde_json::json!({ "event_fidelity": 3 }),
             serde_json::json!({ "event_fidelity": null }),
         ] {
             let workspace = workspace_with_settings(bogus);
-            assert_eq!(workspace.event_fidelity(), EventFidelity::Full);
+            assert_eq!(workspace.event_fidelity(), EventFidelity::Redacted);
         }
     }
 

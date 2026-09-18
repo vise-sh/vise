@@ -188,16 +188,14 @@ pub async fn claim(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // A host only ever claims sessions from its own workspace, so the
-    // workspace's policy applies to whatever was (or will be) claimed. A
-    // missing row cannot happen while the host's FK holds; default rather
-    // than fail the claim.
-    let event_fidelity = state
-        .workspaces
-        .get(&host.workspace_id)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .map(|workspace| workspace.event_fidelity())
-        .unwrap_or_default();
+    // workspace's policy applies to whatever was (or will be) claimed. If the
+    // row cannot be read (or is unexpectedly missing despite the host's FK),
+    // fail closed to the restrictive policy: the session above is already
+    // claimed, and an unknown policy must never resolve to full content.
+    let event_fidelity = match state.workspaces.get(&host.workspace_id).await {
+        Ok(Some(workspace)) => workspace.event_fidelity(),
+        Ok(None) | Err(_) => vise_core::workspaces::model::EventFidelity::Redacted,
+    };
 
     Ok(Json(ClaimResponse {
         session,

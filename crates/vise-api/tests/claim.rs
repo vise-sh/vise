@@ -92,6 +92,20 @@ async fn claim_carries_the_workspaces_redacted_policy(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../vise-core/migrations")]
+async fn claim_fails_closed_on_an_unrecognized_policy(pool: PgPool) {
+    // A typo'd policy must not silently resolve to full content.
+    set_workspace_settings(&pool, serde_json::json!({ "event_fidelity": "partial" })).await;
+
+    let state = app_state(pool, "http://unused", None);
+    let token = enrolled_host_token(&state).await;
+
+    let (status, body) = claim_over_http(&state, &token).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["event_fidelity"], serde_json::json!("redacted"));
+}
+
+#[sqlx::test(migrations = "../vise-core/migrations")]
 async fn empty_claim_still_reports_the_policy(pool: PgPool) {
     set_workspace_settings(&pool, serde_json::json!({ "event_fidelity": "redacted" })).await;
 

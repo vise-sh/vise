@@ -32,4 +32,4 @@ vise-client = { workspace = true }
 [dev-dependencies]
 chrono = { workspace = true }
 tempfile = "3"
-wiremock = "0.6"
+wiremock = { workspace = true }

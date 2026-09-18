@@ -30,4 +30,4 @@ vise-core.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 tower = { version = "0.5", features = ["util"] }
-wiremock = "0.6"
+wiremock.workspace = true

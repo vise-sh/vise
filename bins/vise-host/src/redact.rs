@@ -1,9 +1,9 @@
 //! Event-fidelity redaction. When a workspace's policy is `redacted`, every
 //! event payload is passed through [`redact_payload`] before it leaves the
-//! machine: the event's kind and structure survive (tool-call names, statuses,
-//! file paths, plan-step counts, sequence numbers), but every content string —
-//! message text, diffs, file contents, command output, plan text — is
-//! replaced with a fixed marker.
+//! machine: the event's kind and structure survive (tool-call ids, kinds and
+//! statuses, file paths, plan-step counts, sequence numbers), but every
+//! content string — message text, titles, diffs, file contents, command
+//! output, plan text — is replaced with a fixed marker.
 
 use serde_json::Value;
 
@@ -43,19 +43,16 @@ const KEEP_KEYS: &[&str] = &[
 /// values are replaced with [`REDACTED`] unless their key marks them as
 /// structural metadata.
 ///
-/// `title` is special-cased: inside a tool call (an object that carries a
-/// `toolCallId`) it is the tool-call name and is kept; anywhere else (e.g. a
-/// session-info title derived from the conversation) it is content.
+/// `title` is always content, even inside a tool call: ACP tool-call titles
+/// routinely embed the command line, grep pattern or prompt text. The tool
+/// call's structural identity survives via `toolCallId`, `kind` and `status`.
 pub fn redact_payload(payload: &mut Value) {
     match payload {
         Value::Object(map) => {
-            let is_tool_call = map.contains_key("toolCallId");
             for (key, value) in map.iter_mut() {
                 match value {
                     Value::String(text) => {
-                        let keep =
-                            KEEP_KEYS.contains(&key.as_str()) || (key == "title" && is_tool_call);
-                        if !keep {
+                        if !KEEP_KEYS.contains(&key.as_str()) {
                             *text = REDACTED.to_string();
                         }
                     }
@@ -116,13 +113,13 @@ mod tests {
     }
 
     #[test]
-    fn keeps_tool_call_name_kind_status_and_paths() {
+    fn keeps_tool_call_kind_status_and_paths_but_strips_the_title() {
         let out = redacted(json!({
             "sessionId": "sess-1",
             "update": {
                 "sessionUpdate": "tool_call",
                 "toolCallId": "call_1",
-                "title": "Read file",
+                "title": "grep 'SECRET_PATTERN' src/",
                 "kind": "read",
                 "status": "in_progress",
                 "locations": [{ "path": "/repo/src/lib.rs", "line": 42 }],
@@ -132,7 +129,9 @@ mod tests {
 
         let update = &out["update"];
         assert_eq!(update["toolCallId"], "call_1");
-        assert_eq!(update["title"], "Read file");
+        // Titles embed command lines, grep patterns or prompt text: content.
+        assert_eq!(update["title"], REDACTED);
+        assert!(!out.to_string().contains("SECRET_PATTERN"));
         assert_eq!(update["kind"], "read");
         assert_eq!(update["status"], "in_progress");
         assert_eq!(update["locations"][0]["path"], "/repo/src/lib.rs");
@@ -206,7 +205,7 @@ mod tests {
     }
 
     #[test]
-    fn strips_session_title_outside_tool_calls() {
+    fn strips_session_titles() {
         // SessionInfoUpdate titles are derived from the conversation: content.
         let out = redacted(json!({
             "sessionId": "sess-1",
@@ -239,7 +238,7 @@ mod tests {
                 "sessionId": "sess-1",
                 "toolCall": {
                     "toolCallId": "call_3",
-                    "title": "Run tests",
+                    "title": "Run `rm -rf /tmp/scratch`",
                     "kind": "execute",
                     "rawInput": { "command": "rm -rf /tmp/scratch" }
                 },
@@ -251,7 +250,7 @@ mod tests {
         }));
 
         let request = &out["permissionRequest"];
-        assert_eq!(request["toolCall"]["title"], "Run tests");
+        assert_eq!(request["toolCall"]["title"], REDACTED);
         assert_eq!(request["toolCall"]["rawInput"]["command"], REDACTED);
         assert_eq!(request["options"][0]["optionId"], "allow");
         assert_eq!(out["autoApproved"], "allow");
