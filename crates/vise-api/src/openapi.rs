@@ -44,6 +44,7 @@ use utoipa::OpenApi;
         vise_core::sessions::model::SessionEvent,
         vise_core::sessions::model::NewSessionEvent,
         vise_core::hosts::model::Host,
+        vise_core::workspaces::model::EventFidelity,
     ))
 )]
 pub struct ApiDoc;

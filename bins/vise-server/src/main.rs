@@ -5,6 +5,7 @@ use vise_api::{AppState, app};
 use vise_core::hosts::{postgres::PostgresHostRepository, service::HostService};
 use vise_core::sessions::{postgres::PostgresSessionRepository, service::SessionService};
 use vise_core::workspaces::model::WorkspaceId;
+use vise_core::workspaces::postgres::PostgresWorkspaceRepository;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -33,7 +34,8 @@ async fn main() -> anyhow::Result<()> {
     let sessions = Arc::new(SessionService::new(PostgresSessionRepository::new(
         pool.clone(),
     )));
-    let hosts = Arc::new(HostService::new(PostgresHostRepository::new(pool)));
+    let hosts = Arc::new(HostService::new(PostgresHostRepository::new(pool.clone())));
+    let workspaces = Arc::new(PostgresWorkspaceRepository::new(pool));
 
     // Lease-expiry sweeper: hosts that crash stop heartbeating, so their
     // running sessions are failed once the lease lapses.
@@ -111,6 +113,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         sessions,
         hosts,
+        workspaces,
         workspace: WorkspaceId::DEFAULT,
         credentials,
         github,

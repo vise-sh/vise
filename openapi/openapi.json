@@ -55,6 +55,10 @@
       },
       "ClaimResponse": {
         "properties": {
+          "event_fidelity": {
+            "$ref": "#/components/schemas/EventFidelity",
+            "description": "The event-fidelity policy of the host's workspace. Under `redacted`\nthe host must strip all content strings from session events before\nreporting them."
+          },
           "session": {
             "allOf": [
               {
@@ -65,6 +69,9 @@
             "nullable": true
           }
         },
+        "required": [
+          "event_fidelity"
+        ],
         "type": "object"
       },
       "CreateSessionRequest": {
@@ -134,6 +141,14 @@
           "kind"
         ],
         "type": "object"
+      },
+      "EventFidelity": {
+        "description": "How much of a session's event stream may leave the host machine.\n\nStored per workspace in `settings.event_fidelity`; hosts learn the policy\nfrom the claim response and apply it before events are uploaded.",
+        "enum": [
+          "full",
+          "redacted"
+        ],
+        "type": "string"
       },
       "FinishRequest": {
         "properties": {

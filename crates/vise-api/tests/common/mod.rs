@@ -13,6 +13,7 @@ use vise_core::sessions::model::{
 };
 use vise_core::sessions::{postgres::PostgresSessionRepository, service::SessionService};
 use vise_core::workspaces::model::WorkspaceId;
+use vise_core::workspaces::postgres::PostgresWorkspaceRepository;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -37,7 +38,8 @@ pub fn app_state(pool: PgPool, github_base: &str, github: Option<GithubAuth>) ->
         sessions: Arc::new(SessionService::new(PostgresSessionRepository::new(
             pool.clone(),
         ))),
-        hosts: Arc::new(HostService::new(PostgresHostRepository::new(pool))),
+        hosts: Arc::new(HostService::new(PostgresHostRepository::new(pool.clone()))),
+        workspaces: Arc::new(PostgresWorkspaceRepository::new(pool)),
         workspace: WorkspaceId::DEFAULT,
         credentials,
         github,
