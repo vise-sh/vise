@@ -1,4 +1,31 @@
-use utoipa::OpenApi;
+use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
+use utoipa::{Modify, OpenApi};
+
+/// Name of the bearer scheme user-facing operations reference in their
+/// `security` list. Optional on every operation: the requirement is only
+/// enforced when the server is configured with `VISE_API_TOKEN`.
+pub const API_TOKEN_SCHEME: &str = "api_token";
+
+struct ApiTokenScheme;
+
+impl Modify for ApiTokenScheme {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.get_or_insert_with(Default::default);
+        components.add_security_scheme(
+            API_TOKEN_SCHEME,
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .description(Some(
+                        "Static API token for user-facing routes (sessions, host enrollment). \
+                         Required only when the server sets VISE_API_TOKEN; host-protocol \
+                         routes use the host's own vhost_ token instead.",
+                    ))
+                    .build(),
+            ),
+        );
+    }
+}
 
 #[derive(OpenApi)]
 #[openapi(
@@ -7,6 +34,7 @@ use utoipa::OpenApi;
         version = "0.1.0",
         description = "API for managing Vise agent sessions"
     ),
+    modifiers(&ApiTokenScheme),
     paths(
         crate::routes::sessions::list_sessions,
         crate::routes::sessions::get_session,

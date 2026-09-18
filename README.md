@@ -190,6 +190,21 @@ both are configured, the App wins and the PAT is ignored (the server logs
 this at startup). With neither, `github_repo` sessions fail and PR tracking is
 disabled.
 
+## API authentication
+
+The server is open by default: a single-user install on localhost needs no
+credential for `vise sessions ...` and `vise hosts ...`. To require one, set
+`VISE_API_TOKEN` on the server; user-facing routes (sessions and host
+enrollment) then answer `401` unless the request carries
+`Authorization: Bearer <token>`. The CLI sends it from `--api-token`,
+`VISE_API_TOKEN` in the environment, or `VISE_API_TOKEN` in `~/.vise/.env`.
+Hosts are unaffected: the host protocol authenticates with the host's own
+`vhost_` token from enrollment.
+
+Programmatically, `vise-api` resolves the caller through the
+`vise_api::auth::CallerExtractor` trait held in `AppState`, so a composition
+that embeds the API can swap in its own scheme (API keys, cookies).
+
 ## Architecture
 
 The workspace is split into binaries you run and crates they share.

@@ -6,6 +6,7 @@ use common::*;
 use sqlx::PgPool;
 use tower::ServiceExt;
 use vise_core::sessions::model::{PrState, PrStatus, Session, SessionOutcome};
+use vise_core::workspaces::model::WorkspaceId;
 use wiremock::MockServer;
 
 async fn follow_up(
@@ -145,7 +146,7 @@ async fn composes_review_feedback_and_targets_the_head_branch(pool: PgPool) {
     // Persisted as a normal pending session.
     let stored = state
         .sessions
-        .get(&state.workspace, &created.id)
+        .get(&WorkspaceId::DEFAULT, &created.id)
         .await
         .unwrap()
         .unwrap();
@@ -193,7 +194,7 @@ async fn follow_ups_chain_and_resolve_tracking_to_the_root(pool: PgPool) {
 
     let resolved = state
         .sessions
-        .resolve_tracking_root(&state.workspace, second["id"].as_str().unwrap())
+        .resolve_tracking_root(&WorkspaceId::DEFAULT, second["id"].as_str().unwrap())
         .await
         .unwrap()
         .unwrap();

@@ -491,6 +491,13 @@
         "description": "Identifies the workspace a host or session belongs to.",
         "type": "string"
       }
+    },
+    "securitySchemes": {
+      "api_token": {
+        "description": "Static API token for user-facing routes (sessions, host enrollment). Required only when the server sets VISE_API_TOKEN; host-protocol routes use the host's own vhost_ token instead.",
+        "scheme": "bearer",
+        "type": "http"
+      }
     }
   },
   "info": {
@@ -520,8 +527,17 @@
               }
             },
             "description": "List all enrolled hosts"
+          },
+          "401": {
+            "description": "Missing or invalid API token"
           }
         },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
         "tags": [
           "hosts"
         ]
@@ -548,8 +564,17 @@
               }
             },
             "description": "Host enrolled; the token is returned exactly once"
+          },
+          "401": {
+            "description": "Missing or invalid API token"
           }
         },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
         "tags": [
           "hosts"
         ]
@@ -787,8 +812,17 @@
               }
             },
             "description": "List all sessions"
+          },
+          "401": {
+            "description": "Missing or invalid API token"
           }
         },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
         "tags": [
           "sessions"
         ]
@@ -816,10 +850,19 @@
             },
             "description": "Session created"
           },
+          "401": {
+            "description": "Missing or invalid API token"
+          },
           "422": {
             "description": "Invalid environment"
           }
         },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
         "tags": [
           "sessions"
         ]
@@ -849,8 +892,17 @@
               }
             },
             "description": "Get a session"
+          },
+          "401": {
+            "description": "Missing or invalid API token"
           }
         },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
         "tags": [
           "sessions"
         ]
@@ -881,6 +933,9 @@
             },
             "description": "Cancellation requested (pending sessions are cancelled immediately)"
           },
+          "401": {
+            "description": "Missing or invalid API token"
+          },
           "404": {
             "description": "Session not found"
           },
@@ -888,6 +943,12 @@
             "description": "Session already finished"
           }
         },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
         "tags": [
           "sessions"
         ]
@@ -940,8 +1001,17 @@
               }
             },
             "description": "Events retrieved"
+          },
+          "401": {
+            "description": "Missing or invalid API token"
           }
         },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
         "tags": [
           "sessions"
         ]
@@ -982,6 +1052,9 @@
             },
             "description": "Follow-up session created, targeting the PR's head branch"
           },
+          "401": {
+            "description": "Missing or invalid API token"
+          },
           "404": {
             "description": "Session not found"
           },
@@ -998,6 +1071,12 @@
             "description": "Neither the GitHub App nor a PAT is configured"
           }
         },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
         "tags": [
           "sessions"
         ]

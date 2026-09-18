@@ -137,6 +137,16 @@ vise host start       # reads VISE_HOST_TOKEN and VISE_URL from ~/.vise/.env
 docker compose -f ~/.vise/docker-compose.yml logs -f
 ```
 
+## API token
+
+The server is open by default, which is fine for a single-user install on
+localhost. To require a credential for `vise sessions ...` and
+`vise hosts ...`, set `VISE_API_TOKEN` in `~/.vise/.env` and recreate the
+server container (`docker compose -f ~/.vise/docker-compose.yml up -d`): the
+compose file passes it to the server, and the CLI reads the same file to send
+it as a bearer token. `vise --api-token <token>` or `VISE_API_TOKEN` in the
+environment override it. The host keeps using its own `VISE_HOST_TOKEN`.
+
 ## GitHub authentication
 
 `github_repo` sessions need the server to authenticate to GitHub, both to hand

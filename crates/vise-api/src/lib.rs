@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod credentials;
 pub mod follow_up;
 pub mod github;

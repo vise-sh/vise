@@ -4,7 +4,6 @@ use sqlx::postgres::PgPoolOptions;
 use vise_api::{AppState, app};
 use vise_core::hosts::{postgres::PostgresHostRepository, service::HostService};
 use vise_core::sessions::{postgres::PostgresSessionRepository, service::SessionService};
-use vise_core::workspaces::model::WorkspaceId;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -106,14 +105,18 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(poller.run_forever());
     }
 
-    // Single-tenant: every host and session lives in the `default`
-    // workspace the migrations seed.
+    // Caller identity for user-facing routes: a static bearer token when
+    // VISE_API_TOKEN is set, otherwise open (single-user local install).
+    // Either way the server is single-tenant: both extractors put every
+    // caller in the `default` workspace the migrations seed.
+    let caller = vise_api::auth::from_env();
+
     let state = AppState {
         sessions,
         hosts,
-        workspace: WorkspaceId::DEFAULT,
         credentials,
         github,
+        caller,
     };
 
     let app = app(state);
