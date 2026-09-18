@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE hosts\n            SET last_seen_at = now()\n            WHERE token_hash = $1\n            RETURNING id, workspace_id, name, last_seen_at, created_at\n            ",
+  "query": "\n            UPDATE enrollment_tokens\n            SET revoked_at = COALESCE(revoked_at, now())\n            WHERE workspace_id = $1 AND id = $2\n            RETURNING id, workspace_id, max_uses, uses, revoked_at, created_at\n            ",
   "describe": {
     "columns": [
       {
@@ -9,7 +9,7 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "hosts",
+            "table": "enrollment_tokens",
             "name": "id"
           }
         }
@@ -20,40 +20,51 @@
         "type_info": "Text",
         "origin": {
           "Table": {
-            "table": "hosts",
+            "table": "enrollment_tokens",
             "name": "workspace_id"
           }
         }
       },
       {
         "ordinal": 2,
-        "name": "name",
-        "type_info": "Text",
+        "name": "max_uses",
+        "type_info": "Int8",
         "origin": {
           "Table": {
-            "table": "hosts",
-            "name": "name"
+            "table": "enrollment_tokens",
+            "name": "max_uses"
           }
         }
       },
       {
         "ordinal": 3,
-        "name": "last_seen_at",
-        "type_info": "Timestamptz",
+        "name": "uses",
+        "type_info": "Int8",
         "origin": {
           "Table": {
-            "table": "hosts",
-            "name": "last_seen_at"
+            "table": "enrollment_tokens",
+            "name": "uses"
           }
         }
       },
       {
         "ordinal": 4,
+        "name": "revoked_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "enrollment_tokens",
+            "name": "revoked_at"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
           "Table": {
-            "table": "hosts",
+            "table": "enrollment_tokens",
             "name": "created_at"
           }
         }
@@ -61,16 +72,18 @@
     ],
     "parameters": {
       "Left": [
+        "Text",
         "Text"
       ]
     },
     "nullable": [
       false,
       false,
+      true,
       false,
       true,
       false
     ]
   },
-  "hash": "792b752b5195e25c307b7eb0a2387d7ed98395abbfd0e8ab8c56ee54706fb035"
+  "hash": "cb30358c43c6df28846e14a9682a5b4915c0a28ef9d6c87b1a68640a73748700"
 }

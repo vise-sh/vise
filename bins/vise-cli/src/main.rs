@@ -84,6 +84,22 @@ enum HostCommand {
         #[arg(short, long)]
         follow: bool,
     },
+
+    /// Exchange an enrollment token (venroll_...) for this machine's own
+    /// host token (shown exactly once); the host is ephemeral
+    Enroll {
+        /// Enrollment token secret (venroll_...)
+        #[arg(long, env = "VISE_ENROLL_TOKEN", hide_env_values = true)]
+        token: String,
+
+        /// Prefix for the generated host name (default: "host")
+        #[arg(long)]
+        name_prefix: Option<String>,
+
+        /// Print only the vhost_ token on stdout (for scripts)
+        #[arg(long)]
+        token_only: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -99,6 +115,35 @@ enum HostsCommand {
         /// Print only the token on stdout (for scripts)
         #[arg(long)]
         token_only: bool,
+    },
+
+    /// Manage reusable enrollment tokens (venroll_...) for ephemeral hosts
+    Tokens {
+        #[command(subcommand)]
+        command: TokensCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum TokensCommand {
+    /// List enrollment tokens (never shows secrets)
+    Ls,
+
+    /// Mint an enrollment token and print its secret (shown exactly once)
+    Create {
+        /// Maximum number of hosts this token may enroll (default: unlimited)
+        #[arg(long)]
+        max_uses: Option<i64>,
+
+        /// Print only the secret on stdout (for scripts)
+        #[arg(long)]
+        token_only: bool,
+    },
+
+    /// Revoke an enrollment token; hosts it already enrolled keep working
+    Revoke {
+        /// Enrollment token ID (enr_...)
+        token: String,
     },
 }
 
@@ -319,6 +364,42 @@ async fn main() -> anyhow::Result<()> {
                     enrolled.token, enrolled.token
                 );
             }
+
+            HostsCommand::Tokens { command } => match command {
+                TokensCommand::Ls => {
+                    let tokens = client.list_enrollment_tokens().await?.into_inner();
+                    println!("{}", serde_json::to_string_pretty(&tokens)?);
+                }
+
+                TokensCommand::Create {
+                    max_uses,
+                    token_only,
+                } => {
+                    let minted = client
+                        .mint_enrollment_token(&vise_client::types::MintEnrollmentTokenRequest {
+                            max_uses,
+                        })
+                        .await?
+                        .into_inner();
+
+                    if token_only {
+                        println!("{}", minted.secret);
+                        return Ok(());
+                    }
+
+                    println!("{}", serde_json::to_string_pretty(&minted.token)?);
+                    eprintln!("\nsecret (shown once — save it):\n{}", minted.secret);
+                    eprintln!(
+                        "\nenroll a booting host with:\n  vise host enroll --token {}",
+                        minted.secret
+                    );
+                }
+
+                TokensCommand::Revoke { token } => {
+                    let revoked = client.revoke_enrollment_token(&token).await?.into_inner();
+                    println!("{}", serde_json::to_string_pretty(&revoked)?);
+                }
+            },
         },
 
         Command::Host { command } => match command {
@@ -343,6 +424,31 @@ async fn main() -> anyhow::Result<()> {
             }
 
             HostCommand::Logs { lines, follow } => host::logs(&paths, lines, follow)?,
+
+            HostCommand::Enroll {
+                token,
+                name_prefix,
+                token_only,
+            } => {
+                let enrolled = client
+                    .exchange_enrollment_token(
+                        &vise_client::types::ExchangeEnrollmentTokenRequest { token, name_prefix },
+                    )
+                    .await?
+                    .into_inner();
+
+                if token_only {
+                    println!("{}", enrolled.token);
+                    return Ok(());
+                }
+
+                println!("{}", serde_json::to_string_pretty(&enrolled.host)?);
+                eprintln!("\ntoken (shown once — save it):\n{}", enrolled.token);
+                eprintln!(
+                    "\nrun the host with:\n  VISE_HOST_TOKEN={} vise host start",
+                    enrolled.token
+                );
+            }
         },
     }
 

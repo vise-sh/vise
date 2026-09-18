@@ -2,6 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::extract::FromRef;
+use vise_core::enrollment::{
+    postgres::PostgresEnrollmentTokenRepository, service::EnrollmentTokenService,
+};
 use vise_core::hosts::{postgres::PostgresHostRepository, service::HostService};
 use vise_core::sessions::{postgres::PostgresSessionRepository, service::SessionService};
 
@@ -11,6 +14,9 @@ use crate::auth::CallerExtractor;
 pub struct AppState {
     pub sessions: Arc<SessionService<PostgresSessionRepository>>,
     pub hosts: Arc<HostService<PostgresHostRepository>>,
+    /// Reusable enrollment tokens and their exchange for ephemeral hosts.
+    pub enrollment:
+        Arc<EnrollmentTokenService<PostgresEnrollmentTokenRepository, PostgresHostRepository>>,
     /// Credential providers by name ("github", ...). Empty = none configured.
     pub credentials: HashMap<String, Arc<dyn crate::credentials::CredentialProvider>>,
     /// Read-only GitHub client for PR tracking and follow-up composition;

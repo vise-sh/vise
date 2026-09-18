@@ -146,6 +146,13 @@ async fn static_token_rejects_requests_without_it(pool: PgPool) {
         ),
         ("POST", "/hosts".into(), Some(enroll_body("laptop"))),
         ("GET", "/hosts".into(), None),
+        (
+            "POST",
+            "/hosts/enrollment-tokens".into(),
+            Some(serde_json::json!({})),
+        ),
+        ("GET", "/hosts/enrollment-tokens".into(), None),
+        ("POST", "/hosts/enrollment-tokens/nope/revoke".into(), None),
     ];
 
     for (method, path, body) in attempts {
@@ -175,6 +182,12 @@ async fn static_token_rejects_requests_without_it(pool: PgPool) {
 
     // Nothing was created behind the 401s.
     let (status, _, body) = call("GET", "/hosts").bearer(API_TOKEN).send(&state).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body.as_array().map(Vec::len), Some(0));
+    let (status, _, body) = call("GET", "/hosts/enrollment-tokens")
+        .bearer(API_TOKEN)
+        .send(&state)
+        .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body.as_array().map(Vec::len), Some(0));
     let (status, _, body) = call("GET", "/sessions")
@@ -250,6 +263,38 @@ async fn host_protocol_routes_keep_their_own_host_auth(pool: PgPool) {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 
     let (status, _, _) = call("POST", "/hosts/sessions/nope/heartbeat")
+        .bearer(API_TOKEN)
+        .send(&state)
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+/// The exchange route authenticates BY the enrollment token in its body, so
+/// it must keep working when the server requires an API token: a booting
+/// host has no API token of its own.
+#[sqlx::test(migrations = "../vise-core/migrations")]
+async fn exchange_authenticates_by_enrollment_token_not_api_token(pool: PgPool) {
+    let state = token_state(pool);
+
+    let (status, _, minted) = call("POST", "/hosts/enrollment-tokens")
+        .json(serde_json::json!({}))
+        .bearer(API_TOKEN)
+        .send(&state)
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{minted}");
+    let secret = minted["secret"].as_str().unwrap().to_string();
+
+    // No Authorization header at all: the venroll_ secret is the credential.
+    let (status, _, enrolled) = call("POST", "/hosts/exchange")
+        .json(serde_json::json!({ "token": secret }))
+        .send(&state)
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{enrolled}");
+    assert_eq!(enrolled["host"]["ephemeral"], true);
+
+    // ...and the API token is no substitute for a valid enrollment secret.
+    let (status, _, _) = call("POST", "/hosts/exchange")
+        .json(serde_json::json!({ "token": "venroll_wrong" }))
         .bearer(API_TOKEN)
         .send(&state)
         .await;

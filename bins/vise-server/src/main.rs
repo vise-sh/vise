@@ -2,6 +2,9 @@ use std::sync::Arc;
 
 use sqlx::postgres::PgPoolOptions;
 use vise_api::{AppState, app};
+use vise_core::enrollment::{
+    postgres::PostgresEnrollmentTokenRepository, service::EnrollmentTokenService,
+};
 use vise_core::hosts::{postgres::PostgresHostRepository, service::HostService};
 use vise_core::sessions::{postgres::PostgresSessionRepository, service::SessionService};
 
@@ -32,7 +35,11 @@ async fn main() -> anyhow::Result<()> {
     let sessions = Arc::new(SessionService::new(PostgresSessionRepository::new(
         pool.clone(),
     )));
-    let hosts = Arc::new(HostService::new(PostgresHostRepository::new(pool)));
+    let hosts = Arc::new(HostService::new(PostgresHostRepository::new(pool.clone())));
+    let enrollment = Arc::new(EnrollmentTokenService::new(
+        PostgresEnrollmentTokenRepository::new(pool),
+        hosts.clone(),
+    ));
 
     // Lease-expiry sweeper: hosts that crash stop heartbeating, so their
     // running sessions are failed once the lease lapses.
@@ -46,6 +53,32 @@ async fn main() -> anyhow::Result<()> {
                     Ok(0) => {}
                     Ok(count) => tracing::warn!(count, "expired session leases"),
                     Err(error) => tracing::error!(%error, "lease sweeper failed"),
+                }
+            }
+        });
+    }
+
+    // Ephemeral-host reaper: hosts enrolled through an enrollment token are
+    // disposable, so one that has not been seen for
+    // VISE_EPHEMERAL_HOST_TTL_SECS is deleted. A host still holding a
+    // running session is spared until the lease sweeper has dealt with the
+    // session; hand-enrolled (non-ephemeral) hosts are never touched.
+    {
+        let ttl_secs: u64 = std::env::var("VISE_EPHEMERAL_HOST_TTL_SECS")
+            .ok()
+            .map(|value| value.parse())
+            .transpose()?
+            .unwrap_or(3600);
+        let ttl = std::time::Duration::from_secs(ttl_secs.max(1));
+        let hosts = hosts.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                match hosts.reap_ephemeral(ttl).await {
+                    Ok(0) => {}
+                    Ok(count) => tracing::info!(count, "reaped ephemeral hosts"),
+                    Err(error) => tracing::error!(%error, "ephemeral host reaper failed"),
                 }
             }
         });
@@ -114,6 +147,7 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         sessions,
         hosts,
+        enrollment,
         credentials,
         github,
         caller,

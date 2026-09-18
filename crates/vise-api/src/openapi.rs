@@ -49,6 +49,10 @@ impl Modify for ApiTokenScheme {
         crate::routes::hosts::report_events,
         crate::routes::hosts::finish,
         crate::routes::hosts::issue_credential,
+        crate::routes::enrollment::mint_enrollment_token,
+        crate::routes::enrollment::list_enrollment_tokens,
+        crate::routes::enrollment::revoke_enrollment_token,
+        crate::routes::enrollment::exchange_enrollment_token,
     ),
     components(schemas(
         crate::routes::sessions::CreateSessionRequest,
@@ -63,6 +67,9 @@ impl Modify for ApiTokenScheme {
         crate::routes::hosts::FinishRequest,
         crate::routes::hosts::IssueCredentialRequest,
         crate::routes::hosts::IssueCredentialResponse,
+        crate::routes::enrollment::MintEnrollmentTokenRequest,
+        crate::routes::enrollment::MintEnrollmentTokenResponse,
+        crate::routes::enrollment::ExchangeEnrollmentTokenRequest,
         vise_core::sessions::model::Session,
         vise_core::sessions::model::SessionStatus,
         vise_core::sessions::model::SessionOutcome,
@@ -72,6 +79,7 @@ impl Modify for ApiTokenScheme {
         vise_core::sessions::model::SessionEvent,
         vise_core::sessions::model::NewSessionEvent,
         vise_core::hosts::model::Host,
+        vise_core::enrollment::model::EnrollmentToken,
     ))
 )]
 pub struct ApiDoc;
