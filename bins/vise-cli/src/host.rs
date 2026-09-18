@@ -521,6 +521,19 @@ VISE_URL=http://override:1
         );
     }
 
+    /// Serializes the tests that write a script and then exec it, or that
+    /// fork at all (`kill -0` in `status`). Cargo runs tests in parallel
+    /// threads, and a fork in one thread while another still has its script
+    /// open for writing leaves the child holding that write descriptor until
+    /// it execs; exec'ing the script in the meantime fails with ETXTBSY
+    /// ("Text file busy"). Holding this lock across each such test removes
+    /// the overlap.
+    fn process_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     #[cfg(unix)]
     fn write_script(path: &Path, body: &str) {
         use std::os::unix::fs::PermissionsExt;
@@ -531,6 +544,7 @@ VISE_URL=http://override:1
     #[cfg(unix)]
     #[test]
     fn start_status_stop_lifecycle() {
+        let _guard = process_lock();
         let dir = tempfile::tempdir().unwrap();
         let paths = Paths::new(dir.path());
         fs::create_dir_all(paths.bin_dir()).unwrap();
@@ -602,6 +616,7 @@ VISE_URL=http://override:1
     #[cfg(unix)]
     #[test]
     fn start_reports_immediate_exit() {
+        let _guard = process_lock();
         let dir = tempfile::tempdir().unwrap();
         let paths = Paths::new(dir.path());
         let fake = dir.path().join("failing-host");
@@ -627,6 +642,7 @@ VISE_URL=http://override:1
     #[cfg(unix)]
     #[test]
     fn start_without_token_fails_before_spawning() {
+        let _guard = process_lock();
         let dir = tempfile::tempdir().unwrap();
         let paths = Paths::new(dir.path());
         let fake = dir.path().join("host");
@@ -648,6 +664,7 @@ VISE_URL=http://override:1
 
     #[test]
     fn stale_pidfile_is_cleaned_up() {
+        let _guard = process_lock();
         let dir = tempfile::tempdir().unwrap();
         let paths = Paths::new(dir.path());
         // Highest possible pid on Linux is 4194304; nothing should own this.
