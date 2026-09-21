@@ -233,7 +233,7 @@ jobs:
       - run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
       # Tokenless upload works for public repositories. Coverage is informational
       # only: no status check is required, so a drop never blocks a merge.
-      - uses: codecov/codecov-action@v6
+      - uses: codecov/codecov-action@v7
         with:
           files: lcov.info
           fail_ci_if_error: false
