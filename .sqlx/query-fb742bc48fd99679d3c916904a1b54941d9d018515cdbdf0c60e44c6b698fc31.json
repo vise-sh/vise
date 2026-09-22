@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE routines\n            SET next_run_at = $2,\n                last_fired_at = $3,\n                last_session_id = $4,\n                updated_at = now()\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fb742bc48fd99679d3c916904a1b54941d9d018515cdbdf0c60e44c6b698fc31"
+}
