@@ -30,7 +30,9 @@ anyhow = "1.0.104"
 async-trait = "0.1.92"
 axum = "0.8.9"
 chrono = { version = "0.4.45", features = ["serde"] }
+chrono-tz = { version = "0.10", features = ["serde"] }
 clap = { version = "4.6.6", features = ["derive", "env"] }
+croner = "2"
 dotenvy = "0.15.7"
 futures = "0.3.31"
 reqwest = { version = "0.13.5", features = ["json", "stream"] }
