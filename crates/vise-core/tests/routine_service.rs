@@ -62,7 +62,10 @@ fn build_service(
         pool.clone(),
     )));
     let routines = PostgresRoutineRepository::new(pool.clone());
-    let service = RoutineService::new(PostgresRoutineRepository::new(pool.clone()), sessions.clone());
+    let service = RoutineService::new(
+        PostgresRoutineRepository::new(pool.clone()),
+        sessions.clone(),
+    );
     (service, sessions, routines)
 }
 
@@ -169,7 +172,10 @@ async fn tick_spawns_due_session_stamped_with_routine_id(pool: PgPool) {
     assert_eq!(spawned[0].routine_id.as_deref(), Some(routine.id.as_str()));
 
     let fetched = service.get(&ws, &routine.id).await.unwrap().unwrap();
-    assert_eq!(fetched.last_session_id.as_deref(), Some(spawned[0].id.as_str()));
+    assert_eq!(
+        fetched.last_session_id.as_deref(),
+        Some(spawned[0].id.as_str())
+    );
     assert!(fetched.next_run_at > now);
 }
 

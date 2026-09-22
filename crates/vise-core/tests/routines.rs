@@ -78,8 +78,14 @@ async fn create_then_get_roundtrips(pool: PgPool) {
     assert_eq!(fetched.spec.agent.model, "opus");
     assert_eq!(fetched.spec.agent.mcp_servers, vec!["linear".to_string()]);
     assert_eq!(fetched.spec.environment.kind, "github_repo");
-    assert_eq!(fetched.spec.environment.repo.as_deref(), Some("vise-sh/vise"));
-    assert_eq!(fetched.spec.environment.base_branch.as_deref(), Some("main"));
+    assert_eq!(
+        fetched.spec.environment.repo.as_deref(),
+        Some("vise-sh/vise")
+    );
+    assert_eq!(
+        fetched.spec.environment.base_branch.as_deref(),
+        Some("main")
+    );
     assert_eq!(fetched.spec.input, "run the nightly");
 }
 
@@ -204,10 +210,7 @@ async fn record_fire_advances_and_sets_metadata(pool: PgPool) {
     let ws = create_workspace(&pool, "ws_rtn").await;
     let now = Utc::now();
 
-    let created = repo
-        .create(build_routine(&ws, now, true))
-        .await
-        .unwrap();
+    let created = repo.create(build_routine(&ws, now, true)).await.unwrap();
 
     let next = now + Duration::hours(24);
     repo.record_fire(&created.id, next, Some(now), Some("ses_abc".into()))

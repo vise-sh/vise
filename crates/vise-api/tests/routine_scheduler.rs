@@ -67,7 +67,12 @@ async fn scheduler_run_once_spawns_due_session(pool: PgPool) {
     // Force it due: push next_run_at into the past via record_fire (same
     // technique the routine_service unit tests use).
     routines_repo
-        .record_fire(&routine.id, Utc::now() - ChronoDuration::minutes(1), None, None)
+        .record_fire(
+            &routine.id,
+            Utc::now() - ChronoDuration::minutes(1),
+            None,
+            None,
+        )
         .await
         .unwrap();
 
@@ -81,8 +86,5 @@ async fn scheduler_run_once_spawns_due_session(pool: PgPool) {
     // Exactly one session, stamped with the routine id.
     let spawned = sessions.list_by_routine(&ws, &routine.id).await.unwrap();
     assert_eq!(spawned.len(), 1);
-    assert_eq!(
-        spawned[0].routine_id.as_deref(),
-        Some(routine.id.as_str())
-    );
+    assert_eq!(spawned[0].routine_id.as_deref(), Some(routine.id.as_str()));
 }

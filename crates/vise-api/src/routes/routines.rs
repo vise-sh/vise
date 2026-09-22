@@ -18,7 +18,9 @@ pub fn routes() -> Router<AppState> {
         .route("/routines", get(list_routines).post(create_routine))
         .route(
             "/routines/{id}",
-            get(get_routine).patch(update_routine).delete(delete_routine),
+            get(get_routine)
+                .patch(update_routine)
+                .delete(delete_routine),
         )
         .route("/routines/{id}/run", post(run_routine))
         .route("/routines/{id}/runs", get(list_routine_runs))
@@ -94,9 +96,11 @@ pub async fn create_routine(
         tracing::warn!(%reason, "rejected routine create: cron interval");
         return Err(StatusCode::UNPROCESSABLE_ENTITY);
     }
-    if let Err(reason) =
-        vise_core::routines::schedule::next_after(&request.cron, &request.timezone, chrono::Utc::now())
-    {
+    if let Err(reason) = vise_core::routines::schedule::next_after(
+        &request.cron,
+        &request.timezone,
+        chrono::Utc::now(),
+    ) {
         tracing::warn!(%reason, "rejected routine create: cron/timezone");
         return Err(StatusCode::UNPROCESSABLE_ENTITY);
     }

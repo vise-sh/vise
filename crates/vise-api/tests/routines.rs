@@ -67,9 +67,14 @@ async fn create_returns_routine_with_next_run_at(pool: PgPool) {
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["name"], json!("nightly triage"));
     assert_eq!(body["enabled"], json!(true));
-    let next_run_at = body["next_run_at"].as_str().expect("next_run_at is a string");
+    let next_run_at = body["next_run_at"]
+        .as_str()
+        .expect("next_run_at is a string");
     let next: chrono::DateTime<chrono::Utc> = next_run_at.parse().expect("next_run_at parses");
-    assert!(next > chrono::Utc::now(), "next_run_at must be in the future");
+    assert!(
+        next > chrono::Utc::now(),
+        "next_run_at must be in the future"
+    );
 }
 
 #[sqlx::test(migrations = "../vise-core/migrations")]
