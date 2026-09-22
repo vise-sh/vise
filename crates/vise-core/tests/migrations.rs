@@ -104,6 +104,7 @@ async fn workspace_migration_backfills_existing_rows_to_default(pool: PgPool) {
         vec![
             ("enrollment_tokens".to_string(), "NO".to_string()),
             ("hosts".to_string(), "NO".to_string()),
+            ("routines".to_string(), "NO".to_string()),
             ("sessions".to_string(), "NO".to_string())
         ]
     );
