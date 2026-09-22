@@ -44,21 +44,37 @@ pub fn next_after(
 
 /// Rejects schedules that fire more often than every [`MIN_INTERVAL`].
 ///
-/// Rather than parse cron step syntax ourselves, we sample: take the first few
-/// occurrences after a fixed epoch and assert the smallest gap clears the floor.
-/// Six samples is enough to catch every field's period (minute, hour, day) while
-/// staying cheap. UTC is fine here — interval length is timezone-independent
-/// except across DST transitions, and a fixed non-DST epoch avoids those.
+/// Rather than parse cron step syntax ourselves, we sweep a bounded time window:
+/// starting at a fixed epoch, we take every occurrence within one day plus one
+/// hour and check *every* adjacent gap against the floor. A ~25h window
+/// guarantees we observe every intra-day gap — including the wrap from the last
+/// active hour of one day to the first active hour of the next. Day-of-week /
+/// day-of-month fields only change *which days* fire, never the intra-day gap
+/// structure, so this window is sufficient for any minute/hour pattern. (A small
+/// fixed-count sample is *not* sufficient: for sparse, non-adjacent hour lists
+/// the smallest gap can land past the sampled prefix and slip through.)
+///
+/// Sampling is in UTC, which has no DST transitions, so the interval math is
+/// DST-independent — it's the use of UTC (not the specific epoch) that avoids
+/// DST ambiguity. A hard iteration cap keeps a pathological pattern bounded.
 pub fn validate_min_interval(cron: &str) -> anyhow::Result<()> {
     let parsed = Cron::new(cron)
         .parse()
         .with_context(|| format!("invalid cron {cron:?}"))?;
 
-    // A fixed, unambiguous epoch clear of any DST transition.
+    // A fixed epoch in UTC; UTC has no DST transitions, so gaps measured here
+    // hold regardless of any partner timezone.
     let epoch = Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap();
+    // One full day plus one hour: enough to see every intra-day gap, including
+    // the wrap into the next day's first active hour.
+    let window_end = epoch + Duration::hours(25);
 
     let mut previous: Option<DateTime<Utc>> = None;
-    for occurrence in parsed.iter_after(epoch).take(6) {
+    for occurrence in parsed
+        .iter_after(epoch)
+        .take(4000)
+        .take_while(|o| o.with_timezone(&Utc) <= window_end)
+    {
         let occurrence = occurrence.with_timezone(&Utc);
         if let Some(prev) = previous
             && occurrence - prev < MIN_INTERVAL
@@ -109,5 +125,14 @@ mod tests {
         assert!(super::validate_min_interval("*/5 * * * *").is_err());
         assert!(super::validate_min_interval("*/15 * * * *").is_ok());
         assert!(super::validate_min_interval("0 2 * * *").is_ok());
+        // Legitimately sparse schedules must still be accepted (guard against
+        // over-rejection now that we sweep a full window).
+        assert!(super::validate_min_interval("0,30 * * * *").is_ok());
+    }
+
+    #[test]
+    fn rejects_sub_floor_across_sparse_hours() {
+        // 22:55 -> 23:00 is a 5-minute gap that a small fixed-count sample misses.
+        assert!(super::validate_min_interval("0,35,55 16,22,23 * * *").is_err());
     }
 }
