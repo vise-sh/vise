@@ -18,6 +18,7 @@ use utoipa_swagger_ui::SwaggerUi;
 pub fn app(state: AppState) -> Router {
     Router::<AppState>::new()
         .merge(routes::sessions())
+        .merge(routes::routines())
         .merge(routes::hosts())
         .merge(routes::enrollment())
         .merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", openapi::ApiDoc::openapi()))

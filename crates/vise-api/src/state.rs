@@ -15,6 +15,14 @@ use crate::auth::CallerExtractor;
 #[derive(Clone)]
 pub struct AppState {
     pub sessions: Arc<SessionService<PostgresSessionRepository>>,
+    /// Cron-scheduled session spawns. A background scheduler ticks these; the
+    /// user-facing routes CRUD them and drive off-schedule runs.
+    pub routines: Arc<
+        vise_core::routines::service::RoutineService<
+            vise_core::routines::postgres::PostgresRoutineRepository,
+            vise_core::sessions::postgres::PostgresSessionRepository,
+        >,
+    >,
     pub hosts: Arc<HostService<PostgresHostRepository>>,
     /// Workspace rows, read for per-workspace policy (e.g. event fidelity)
     /// when a host claims work.

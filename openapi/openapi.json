@@ -74,6 +74,32 @@
         ],
         "type": "object"
       },
+      "CreateRoutineRequest": {
+        "description": "Create a routine. The schedule is a flat `cron` + `timezone` pair — chosen\nfor request/response symmetry with the flat [`Routine`] response, rather\nthan the design doc's illustrative nested `schedule` object.",
+        "properties": {
+          "cron": {
+            "description": "Standard 5-field cron expression.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/SessionSpec"
+          },
+          "timezone": {
+            "description": "IANA timezone name (e.g. \"America/New_York\") the cron is interpreted in.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "cron",
+          "timezone",
+          "spec"
+        ],
+        "type": "object"
+      },
       "CreateSessionRequest": {
         "properties": {
           "agent": {
@@ -332,6 +358,34 @@
         ],
         "type": "object"
       },
+      "ListRoutinesResponse": {
+        "properties": {
+          "routines": {
+            "items": {
+              "$ref": "#/components/schemas/Routine"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "routines"
+        ],
+        "type": "object"
+      },
+      "ListRunsResponse": {
+        "properties": {
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "sessions"
+        ],
+        "type": "object"
+      },
       "ListSessionsResponse": {
         "properties": {
           "next_cursor": {
@@ -443,6 +497,70 @@
         ],
         "type": "object"
       },
+      "Routine": {
+        "description": "An API-managed, cron-scheduled session spawn. A background scheduler\nspawns one session per due routine, in the routine's own workspace.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "cron": {
+            "description": "Standard 5-field cron expression.",
+            "type": "string"
+          },
+          "enabled": {
+            "description": "A disabled routine is never fired; it stays configured so it can be\nresumed without recreating it.",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_fired_at": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "last_session_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "next_run_at": {
+            "description": "The next UTC instant this routine is due. The scheduler's claim key.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/SessionSpec"
+          },
+          "timezone": {
+            "description": "IANA timezone name (e.g. \"America/New_York\") the cron is interpreted in.",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workspace_id": {
+            "$ref": "#/components/schemas/WorkspaceId"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "name",
+          "cron",
+          "timezone",
+          "spec",
+          "enabled",
+          "next_run_at",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
       "Session": {
         "properties": {
           "agent": {
@@ -503,6 +621,11 @@
             ],
             "description": "PR tracking snapshot; only present once the poller has synced a\nsession whose outcome is `pr_opened`.",
             "nullable": true
+          },
+          "routine_id": {
+            "description": "Set on sessions spawned by a routine: the routine that created this\nsession. Lets a routine list the sessions it has spawned.",
+            "nullable": true,
+            "type": "string"
           },
           "started_at": {
             "format": "date-time",
@@ -581,6 +704,26 @@
         ],
         "type": "object"
       },
+      "SessionSpec": {
+        "description": "The inline session spec a routine instantiates on each fire. Mirrors the\npublic `CreateSessionRequest` shape exactly (agent + environment + input),\nso when sibling primitives (e.g. deliverable policy) add fields to session\ncreation, routines inherit them without the routine layer knowing.",
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/Agent"
+          },
+          "environment": {
+            "$ref": "#/components/schemas/Environment"
+          },
+          "input": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent",
+          "environment",
+          "input"
+        ],
+        "type": "object"
+      },
       "SessionStatus": {
         "enum": [
           "pending",
@@ -590,6 +733,36 @@
           "cancelled"
         ],
         "type": "string"
+      },
+      "UpdateRoutineRequest": {
+        "description": "A partial update: only the `Some` fields change. Mirrors [`UpdateRoutine`].",
+        "properties": {
+          "cron": {
+            "nullable": true,
+            "type": "string"
+          },
+          "enabled": {
+            "nullable": true,
+            "type": "boolean"
+          },
+          "name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "spec": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SessionSpec"
+              }
+            ],
+            "nullable": true
+          },
+          "timezone": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
       },
       "WorkspaceId": {
         "description": "Identifies the workspace a host or session belongs to.",
@@ -1048,6 +1221,289 @@
         },
         "tags": [
           "hosts"
+        ]
+      }
+    },
+    "/routines": {
+      "get": {
+        "operationId": "list_routines",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListRoutinesResponse"
+                }
+              }
+            },
+            "description": "List all routines"
+          },
+          "401": {
+            "description": "Missing or invalid API token"
+          }
+        },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
+        "tags": [
+          "routines"
+        ]
+      },
+      "post": {
+        "operationId": "create_routine",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoutineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Routine"
+                }
+              }
+            },
+            "description": "Routine created"
+          },
+          "401": {
+            "description": "Missing or invalid API token"
+          },
+          "422": {
+            "description": "Invalid environment, cron, or timezone"
+          }
+        },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
+        "tags": [
+          "routines"
+        ]
+      }
+    },
+    "/routines/{id}": {
+      "delete": {
+        "operationId": "delete_routine",
+        "parameters": [
+          {
+            "description": "Routine ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Routine deleted"
+          },
+          "401": {
+            "description": "Missing or invalid API token"
+          }
+        },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
+        "tags": [
+          "routines"
+        ]
+      },
+      "get": {
+        "operationId": "get_routine",
+        "parameters": [
+          {
+            "description": "Routine ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Routine"
+                }
+              }
+            },
+            "description": "Get a routine"
+          },
+          "401": {
+            "description": "Missing or invalid API token"
+          },
+          "404": {
+            "description": "Routine not found"
+          }
+        },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
+        "tags": [
+          "routines"
+        ]
+      },
+      "patch": {
+        "operationId": "update_routine",
+        "parameters": [
+          {
+            "description": "Routine ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoutineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Routine"
+                }
+              }
+            },
+            "description": "Routine updated"
+          },
+          "401": {
+            "description": "Missing or invalid API token"
+          },
+          "404": {
+            "description": "Routine not found"
+          },
+          "422": {
+            "description": "Invalid environment, cron, or timezone"
+          }
+        },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
+        "tags": [
+          "routines"
+        ]
+      }
+    },
+    "/routines/{id}/run": {
+      "post": {
+        "operationId": "run_routine",
+        "parameters": [
+          {
+            "description": "Routine ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            },
+            "description": "Session spawned off-schedule"
+          },
+          "401": {
+            "description": "Missing or invalid API token"
+          },
+          "404": {
+            "description": "Routine not found"
+          }
+        },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
+        "tags": [
+          "routines"
+        ]
+      }
+    },
+    "/routines/{id}/runs": {
+      "get": {
+        "operationId": "list_routine_runs",
+        "parameters": [
+          {
+            "description": "Routine ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListRunsResponse"
+                }
+              }
+            },
+            "description": "List the routine's runs (sessions it spawned)"
+          },
+          "401": {
+            "description": "Missing or invalid API token"
+          },
+          "404": {
+            "description": "Routine not found"
+          }
+        },
+        "security": [
+          {
+            "api_token": []
+          },
+          {}
+        ],
+        "tags": [
+          "routines"
         ]
       }
     },

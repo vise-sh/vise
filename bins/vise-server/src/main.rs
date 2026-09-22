@@ -6,6 +6,7 @@ use vise_core::enrollment::{
     postgres::PostgresEnrollmentTokenRepository, service::EnrollmentTokenService,
 };
 use vise_core::hosts::{postgres::PostgresHostRepository, service::HostService};
+use vise_core::routines::{postgres::PostgresRoutineRepository, service::RoutineService};
 use vise_core::sessions::{postgres::PostgresSessionRepository, service::SessionService};
 use vise_core::workspaces::model::WorkspaceId;
 use vise_core::workspaces::postgres::PostgresWorkspaceRepository;
@@ -38,6 +39,10 @@ async fn main() -> anyhow::Result<()> {
         pool.clone(),
     )));
     let hosts = Arc::new(HostService::new(PostgresHostRepository::new(pool.clone())));
+    let routines = Arc::new(RoutineService::new(
+        PostgresRoutineRepository::new(pool.clone()),
+        sessions.clone(),
+    ));
     let workspaces = Arc::new(PostgresWorkspaceRepository::new(pool.clone()));
     let enrollment = Arc::new(EnrollmentTokenService::new(
         PostgresEnrollmentTokenRepository::new(pool),
@@ -149,6 +154,7 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState {
         sessions,
+        routines,
         hosts,
         workspaces,
         workspace: WorkspaceId::DEFAULT,
