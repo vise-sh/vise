@@ -150,6 +150,7 @@ pub async fn create_session(
             request.environment,
             request.input,
             None,
+            None,
         )
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -273,6 +274,7 @@ pub async fn follow_up_session(
             environment,
             input,
             Some(parent.id.clone()),
+            None,
         )
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

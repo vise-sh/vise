@@ -36,6 +36,7 @@ struct SessionRow {
     outcome: Option<sqlx::types::Json<SessionOutcome>>,
     pr_status: Option<sqlx::types::Json<PrStatus>>,
     parent_session_id: Option<String>,
+    routine_id: Option<String>,
     cancel_requested: bool,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -59,6 +60,7 @@ impl From<SessionRow> for Session {
             outcome: row.outcome.map(|j| j.0),
             pr_status: row.pr_status.map(|j| j.0),
             parent_session_id: row.parent_session_id,
+            routine_id: row.routine_id,
             cancel_requested: row.cancel_requested,
             created_at: row.created_at,
             updated_at: row.updated_at,
@@ -79,10 +81,11 @@ impl SessionRepository for PostgresSessionRepository {
                 input,
                 status,
                 parent_session_id,
+                routine_id,
                 created_at,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             "#,
         )
         .bind(&session.id)
@@ -92,6 +95,7 @@ impl SessionRepository for PostgresSessionRepository {
         .bind(&session.input)
         .bind(status_str(&session.status))
         .bind(&session.parent_session_id)
+        .bind(&session.routine_id)
         .bind(session.created_at)
         .bind(session.updated_at)
         .execute(&self.pool)
@@ -120,6 +124,7 @@ impl SessionRepository for PostgresSessionRepository {
                 outcome as "outcome: _",
                 pr_status as "pr_status: _",
                 parent_session_id,
+                routine_id,
                 cancel_requested,
                 created_at,
                 updated_at
@@ -155,6 +160,7 @@ impl SessionRepository for PostgresSessionRepository {
                 outcome as "outcome: _",
                 pr_status as "pr_status: _",
                 parent_session_id,
+                routine_id,
                 cancel_requested,
                 created_at,
                 updated_at
@@ -163,6 +169,47 @@ impl SessionRepository for PostgresSessionRepository {
             ORDER BY created_at DESC
             "#,
             workspace.as_str()
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(Session::from).collect())
+    }
+
+    async fn list_by_routine(
+        &self,
+        workspace: &WorkspaceId,
+        routine_id: &str,
+    ) -> anyhow::Result<Vec<Session>> {
+        let rows = sqlx::query_as!(
+            SessionRow,
+            r#"
+            SELECT
+                id,
+                workspace_id,
+                agent as "agent: _",
+                environment as "environment: _",
+                input,
+                status,
+                host_id,
+                lease_expires_at,
+                started_at,
+                finished_at,
+                stop_reason,
+                error,
+                outcome as "outcome: _",
+                pr_status as "pr_status: _",
+                parent_session_id,
+                routine_id,
+                cancel_requested,
+                created_at,
+                updated_at
+            FROM sessions
+            WHERE workspace_id = $1 AND routine_id = $2
+            ORDER BY created_at DESC
+            "#,
+            workspace.as_str(),
+            routine_id
         )
         .fetch_all(&self.pool)
         .await?;
@@ -256,6 +303,7 @@ impl SessionRepository for PostgresSessionRepository {
                 outcome as "outcome: _",
                 pr_status as "pr_status: _",
                 parent_session_id,
+                routine_id,
                 cancel_requested,
                 created_at,
                 updated_at
@@ -367,6 +415,7 @@ impl SessionRepository for PostgresSessionRepository {
                 outcome as "outcome: _",
                 pr_status as "pr_status: _",
                 parent_session_id,
+                routine_id,
                 cancel_requested,
                 created_at,
                 updated_at
@@ -414,6 +463,7 @@ impl SessionRepository for PostgresSessionRepository {
                 outcome as "outcome: _",
                 pr_status as "pr_status: _",
                 parent_session_id,
+                routine_id,
                 cancel_requested,
                 created_at,
                 updated_at
@@ -465,6 +515,7 @@ impl SessionRepository for PostgresSessionRepository {
                 outcome as "outcome: _",
                 pr_status as "pr_status: _",
                 parent_session_id,
+                routine_id,
                 cancel_requested,
                 created_at,
                 updated_at
@@ -504,6 +555,7 @@ impl SessionRepository for PostgresSessionRepository {
                 outcome as "outcome: _",
                 pr_status as "pr_status: _",
                 parent_session_id,
+                routine_id,
                 cancel_requested,
                 created_at,
                 updated_at

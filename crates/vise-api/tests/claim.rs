@@ -49,6 +49,7 @@ async fn queue_session(state: &vise_api::AppState) -> String {
             github_env("acme/widgets"),
             "do the thing".into(),
             None,
+            None,
         )
         .await
         .unwrap()

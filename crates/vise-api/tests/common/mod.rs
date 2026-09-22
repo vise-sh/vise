@@ -102,6 +102,7 @@ pub async fn finished_session(
             github_env("acme/widgets"),
             "do the thing".into(),
             None,
+            None,
         )
         .await
         .unwrap();

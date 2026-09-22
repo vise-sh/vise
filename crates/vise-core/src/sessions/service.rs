@@ -30,6 +30,15 @@ where
         self.repository.get(workspace, id).await
     }
 
+    /// Sessions spawned by a given routine in `workspace`, newest first.
+    pub async fn list_by_routine(
+        &self,
+        workspace: &WorkspaceId,
+        routine_id: &str,
+    ) -> anyhow::Result<Vec<Session>> {
+        self.repository.list_by_routine(workspace, routine_id).await
+    }
+
     /// Queue a new session in `workspace`. A follow-up's `parent_session_id`
     /// must name a session in the same workspace; callers resolve the parent
     /// with [`get`](Self::get) first, which cannot cross workspaces.
@@ -40,6 +49,7 @@ where
         environment: super::model::Environment,
         input: String,
         parent_session_id: Option<String>,
+        routine_id: Option<String>,
     ) -> anyhow::Result<Session> {
         let now = Utc::now();
 
@@ -59,6 +69,7 @@ where
             outcome: None,
             pr_status: None,
             parent_session_id,
+            routine_id,
             cancel_requested: false,
             created_at: now,
             updated_at: now,
