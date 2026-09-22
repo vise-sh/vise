@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use chrono::{Duration, Utc};
 use sqlx::PgPool;
-use vise_core::routines::model::SessionSpec;
+use vise_core::routines::model::{SessionSpec, UpdateRoutine};
 use vise_core::routines::postgres::PostgresRoutineRepository;
 use vise_core::routines::repository::RoutineRepository;
 use vise_core::routines::service::RoutineService;
@@ -254,11 +254,10 @@ async fn tick_ignores_future_and_disabled(pool: PgPool) {
         .update(
             &ws,
             &disabled.id,
-            None,
-            None,
-            None,
-            None,
-            Some(false),
+            UpdateRoutine {
+                enabled: Some(false),
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -339,11 +338,10 @@ async fn update_recomputes_next_run_at_when_cron_changes(pool: PgPool) {
         .update(
             &ws,
             &routine.id,
-            None,
-            Some("0 9 * * 1".into()),
-            None,
-            None,
-            None,
+            UpdateRoutine {
+                cron: Some("0 9 * * 1".into()),
+                ..Default::default()
+            },
         )
         .await
         .unwrap()
@@ -353,8 +351,72 @@ async fn update_recomputes_next_run_at_when_cron_changes(pool: PgPool) {
 
     // Updating a missing id returns None.
     let missing = service
-        .update(&ws, "rtn_nope", Some("weekly".into()), None, None, None, None)
+        .update(
+            &ws,
+            "rtn_nope",
+            UpdateRoutine {
+                name: Some("weekly".into()),
+                ..Default::default()
+            },
+        )
         .await
         .unwrap();
     assert!(missing.is_none());
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn tick_isolates_a_poison_routine(pool: PgPool) {
+    let ws = create_workspace(&pool, "ws_rtn").await;
+    let (service, sessions, routines) = build_service(&pool);
+
+    // A healthy, due routine.
+    let healthy = service
+        .create(
+            ws.clone(),
+            "healthy".into(),
+            "0 9 * * *".into(),
+            "America/New_York".into(),
+            valid_spec(),
+        )
+        .await
+        .unwrap();
+    routines
+        .record_fire(&healthy.id, Utc::now() - Duration::minutes(1), None, None)
+        .await
+        .unwrap();
+
+    // A poison routine: created valid (so it passes create-time validation),
+    // then corrupted at the storage layer to an unparseable cron so `next_after`
+    // fails when `tick` handles it. Also forced due via record_fire.
+    let poison = service
+        .create(
+            ws.clone(),
+            "poison".into(),
+            "0 9 * * *".into(),
+            "America/New_York".into(),
+            valid_spec(),
+        )
+        .await
+        .unwrap();
+    sqlx::query("UPDATE routines SET cron = 'not a cron' WHERE id = $1")
+        .bind(&poison.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    routines
+        .record_fire(&poison.id, Utc::now() - Duration::minutes(1), None, None)
+        .await
+        .unwrap();
+
+    let report = service.tick(Utc::now()).await.unwrap();
+    // The poison row failed in isolation; the healthy routine still fired.
+    assert_eq!(report.failed, 1);
+    assert_eq!(report.spawned, 1);
+    assert_eq!(report.skipped, 0);
+
+    // The healthy routine actually spawned a session; the poison one did not.
+    let healthy_sessions = sessions.list_by_routine(&ws, &healthy.id).await.unwrap();
+    assert_eq!(healthy_sessions.len(), 1);
+    let poison_sessions = sessions.list_by_routine(&ws, &poison.id).await.unwrap();
+    assert_eq!(poison_sessions.len(), 0);
 }

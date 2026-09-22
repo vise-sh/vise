@@ -16,6 +16,18 @@ pub struct SessionSpec {
     pub input: String,
 }
 
+/// A partial update to a routine: only the `Some` fields change. Mirrors the
+/// HTTP PATCH body; the service re-validates and recomputes `next_run_at`
+/// when `cron` or `timezone` changes.
+#[derive(Debug, Clone, Default)]
+pub struct UpdateRoutine {
+    pub name: Option<String>,
+    pub cron: Option<String>,
+    pub timezone: Option<String>,
+    pub spec: Option<SessionSpec>,
+    pub enabled: Option<bool>,
+}
+
 /// An API-managed, cron-scheduled session spawn. A background scheduler
 /// spawns one session per due routine, in the routine's own workspace.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

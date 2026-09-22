@@ -3,7 +3,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 
 use super::{
-    model::{Routine, SessionSpec},
+    model::{Routine, SessionSpec, UpdateRoutine},
     repository::RoutineRepository,
     schedule,
 };
@@ -14,7 +14,7 @@ use crate::workspaces::model::WorkspaceId;
 
 /// Most routines a single scheduler tick will claim and process. A cap keeps
 /// one tick bounded; anything still due is picked up on the next tick.
-const LIMIT: i64 = 100;
+const MAX_ROUTINES_PER_TICK: i64 = 100;
 
 /// The result of one [`RoutineService::tick`] pass.
 #[derive(Debug, Default, Clone, Copy)]
@@ -23,6 +23,15 @@ pub struct TickReport {
     pub spawned: usize,
     /// Routines that were due but skipped because a prior run was still active.
     pub skipped: usize,
+    /// Routines that errored while being handled this tick (e.g. an
+    /// unparseable cron). One bad routine does not starve the rest of the batch.
+    pub failed: usize,
+}
+
+/// The outcome of handling a single due routine within a tick.
+enum Outcome {
+    Spawned,
+    Skipped,
 }
 
 /// The logic layer over routine storage: validates routines on write and, on
@@ -95,41 +104,34 @@ where
     /// untouched. If the schedule (cron or timezone) changed, re-validate and
     /// recompute `next_run_at`; if a new spec is given, validate its
     /// environment. Returns `Ok(None)` if the routine does not exist.
-    // One `Option` per PATCHable field is the natural shape for partial-update
-    // semantics; grouping them into a struct would only move the arity elsewhere.
-    #[allow(clippy::too_many_arguments)]
     pub async fn update(
         &self,
         workspace: &WorkspaceId,
         id: &str,
-        name: Option<String>,
-        cron: Option<String>,
-        timezone: Option<String>,
-        spec: Option<SessionSpec>,
-        enabled: Option<bool>,
+        patch: UpdateRoutine,
     ) -> anyhow::Result<Option<Routine>> {
         let Some(mut routine) = self.routines.get(workspace, id).await? else {
             return Ok(None);
         };
 
-        let schedule_changed = cron.is_some() || timezone.is_some();
+        let schedule_changed = patch.cron.is_some() || patch.timezone.is_some();
 
-        if let Some(name) = name {
+        if let Some(name) = patch.name {
             routine.name = name;
         }
-        if let Some(cron) = cron {
+        if let Some(cron) = patch.cron {
             routine.cron = cron;
         }
-        if let Some(timezone) = timezone {
+        if let Some(timezone) = patch.timezone {
             routine.timezone = timezone;
         }
-        if let Some(spec) = spec {
+        if let Some(spec) = patch.spec {
             spec.environment
                 .validate()
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
             routine.spec = spec;
         }
-        if let Some(enabled) = enabled {
+        if let Some(enabled) = patch.enabled {
             routine.enabled = enabled;
         }
 
@@ -174,58 +176,62 @@ where
     /// skipped, never backfilled). A routine with a still-active prior run is
     /// skipped this tick but its schedule still advances.
     pub async fn tick(&self, now: DateTime<Utc>) -> anyhow::Result<TickReport> {
-        let due = self.routines.claim_due(now, LIMIT).await?;
+        let due = self.routines.claim_due(now, MAX_ROUTINES_PER_TICK).await?;
 
         let mut report = TickReport::default();
 
         for routine in due {
-            let next = schedule::next_after(&routine.cron, &routine.timezone, now)?;
-
-            let active = self
-                .sessions
-                .list_by_routine(&routine.workspace_id, &routine.id)
-                .await?
-                .iter()
-                .any(|s| matches!(s.status, SessionStatus::Pending | SessionStatus::Running));
-
-            if active {
-                self.routines
-                    .record_fire(
-                        &routine.id,
-                        next,
-                        routine.last_fired_at,
-                        routine.last_session_id.clone(),
-                    )
-                    .await?;
-                report.skipped += 1;
-                tracing::info!(routine = %routine.id, "skipped_overlap");
-            } else {
-                let session = self
-                    .sessions
-                    .create(
-                        routine.workspace_id.clone(),
-                        routine.spec.agent.clone(),
-                        routine.spec.environment.clone(),
-                        routine.spec.input.clone(),
-                        None,
-                        Some(routine.id.clone()),
-                    )
-                    .await?;
-                self.routines
-                    .record_fire(&routine.id, next, Some(now), Some(session.id))
-                    .await?;
-                report.spawned += 1;
+            // One bad routine (e.g. a cron that no longer parses) must not drop
+            // every other due routine in the batch: isolate each fire's errors.
+            match self.fire_one(&routine, now).await {
+                Ok(Outcome::Spawned) => report.spawned += 1,
+                Ok(Outcome::Skipped) => report.skipped += 1,
+                Err(_) => report.failed += 1,
             }
         }
 
-        if report.spawned > 0 || report.skipped > 0 {
-            tracing::info!(
-                spawned = report.spawned,
-                skipped = report.skipped,
-                "routine tick"
-            );
-        }
-
         Ok(report)
+    }
+
+    /// Handle a single due routine: decide spawn-vs-skip, spawn the session if
+    /// firing, and advance the schedule. Any error here is isolated by `tick`
+    /// so it counts against `failed` without starving the rest of the batch.
+    async fn fire_one(&self, routine: &Routine, now: DateTime<Utc>) -> anyhow::Result<Outcome> {
+        let next = schedule::next_after(&routine.cron, &routine.timezone, now)?;
+
+        let active = self
+            .sessions
+            .list_by_routine(&routine.workspace_id, &routine.id)
+            .await?
+            .iter()
+            .any(|s| matches!(s.status, SessionStatus::Pending | SessionStatus::Running));
+
+        if active {
+            self.routines
+                .record_fire(
+                    &routine.id,
+                    next,
+                    routine.last_fired_at,
+                    routine.last_session_id.clone(),
+                )
+                .await?;
+            Ok(Outcome::Skipped)
+        } else {
+            let session = self
+                .sessions
+                .create(
+                    routine.workspace_id.clone(),
+                    routine.spec.agent.clone(),
+                    routine.spec.environment.clone(),
+                    routine.spec.input.clone(),
+                    None,
+                    Some(routine.id.clone()),
+                )
+                .await?;
+            self.routines
+                .record_fire(&routine.id, next, Some(now), Some(session.id))
+                .await?;
+            Ok(Outcome::Spawned)
+        }
     }
 }
