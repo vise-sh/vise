@@ -4,6 +4,7 @@ pub mod follow_up;
 pub mod github;
 pub mod openapi;
 pub mod pr_tracking;
+pub mod routine_scheduler;
 mod routes;
 mod state;
 

@@ -146,6 +146,21 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(poller.run_forever());
     }
 
+    // Routine scheduler: wakes on an interval and spawns a session per due
+    // routine. FOR UPDATE SKIP LOCKED in claim_due makes running >1 server safe.
+    {
+        let interval_secs: u64 = std::env::var("VISE_ROUTINE_POLL_INTERVAL_SECS")
+            .ok()
+            .map(|value| value.parse())
+            .transpose()?
+            .unwrap_or(60);
+        let scheduler = vise_api::routine_scheduler::RoutineScheduler::new(
+            routines.clone(),
+            std::time::Duration::from_secs(interval_secs.max(1)),
+        );
+        tokio::spawn(scheduler.run_forever());
+    }
+
     // Caller identity for user-facing routes: a static bearer token when
     // VISE_API_TOKEN is set, otherwise open (single-user local install).
     // Either way the server is single-tenant: both extractors put every
