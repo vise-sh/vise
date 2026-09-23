@@ -11,6 +11,8 @@ workspace = true
 
 [dependencies]
 chrono = { workspace = true }
+chrono-tz = { workspace = true }
+croner = { workspace = true }
 anyhow = { workspace = true }
 sqlx = { workspace = true }
 uuid = { workspace = true }

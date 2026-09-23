@@ -119,6 +119,7 @@ pub(crate) mod test_support {
             outcome: None,
             pr_status: None,
             parent_session_id: None,
+            routine_id: None,
             cancel_requested: false,
             created_at: Utc::now(),
             updated_at: Utc::now(),

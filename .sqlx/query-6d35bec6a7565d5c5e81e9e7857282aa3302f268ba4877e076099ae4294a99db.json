@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id,\n                workspace_id,\n                agent as \"agent: _\",\n                environment as \"environment: _\",\n                input,\n                status,\n                host_id,\n                lease_expires_at,\n                started_at,\n                finished_at,\n                stop_reason,\n                error,\n                outcome as \"outcome: _\",\n                pr_status as \"pr_status: _\",\n                parent_session_id,\n                cancel_requested,\n                created_at,\n                updated_at\n            FROM sessions\n            WHERE id = $1\n              AND outcome ->> 'kind' = 'pr_opened'\n              AND (pr_status IS NULL OR pr_status ->> 'state' NOT IN ('merged', 'closed'))\n            FOR UPDATE SKIP LOCKED\n            ",
+  "query": "\n            SELECT\n                id,\n                workspace_id,\n                agent as \"agent: _\",\n                environment as \"environment: _\",\n                input,\n                status,\n                host_id,\n                lease_expires_at,\n                started_at,\n                finished_at,\n                stop_reason,\n                error,\n                outcome as \"outcome: _\",\n                pr_status as \"pr_status: _\",\n                parent_session_id,\n                routine_id,\n                cancel_requested,\n                created_at,\n                updated_at\n            FROM sessions\n            WHERE id = $1\n              AND outcome ->> 'kind' = 'pr_opened'\n              AND (pr_status IS NULL OR pr_status ->> 'state' NOT IN ('merged', 'closed'))\n            FOR UPDATE SKIP LOCKED\n            ",
   "describe": {
     "columns": [
       {
@@ -170,6 +170,17 @@
       },
       {
         "ordinal": 15,
+        "name": "routine_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "routine_id"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
         "name": "cancel_requested",
         "type_info": "Bool",
         "origin": {
@@ -180,7 +191,7 @@
         }
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -191,7 +202,7 @@
         }
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -223,10 +234,11 @@
       true,
       true,
       true,
+      true,
       false,
       false,
       false
     ]
   },
-  "hash": "4651447cf41be73f98d5bfcfe65965236f1cd0d77b989a1fa5096eaaf61efb5e"
+  "hash": "6d35bec6a7565d5c5e81e9e7857282aa3302f268ba4877e076099ae4294a99db"
 }

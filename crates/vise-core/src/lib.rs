@@ -1,6 +1,7 @@
 pub mod enrollment;
 pub mod hosts;
 pub mod id;
+pub mod routines;
 pub mod sessions;
 pub mod workspaces;
 

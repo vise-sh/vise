@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id,\n                workspace_id,\n                agent as \"agent: _\",\n                environment as \"environment: _\",\n                input,\n                status,\n                host_id,\n                lease_expires_at,\n                started_at,\n                finished_at,\n                stop_reason,\n                error,\n                outcome as \"outcome: _\",\n                pr_status as \"pr_status: _\",\n                parent_session_id,\n                cancel_requested,\n                created_at,\n                updated_at\n            FROM sessions\n            WHERE outcome ->> 'kind' = 'pr_opened'\n              AND (pr_status IS NULL OR pr_status ->> 'state' NOT IN ('merged', 'closed'))\n            ORDER BY pr_status ->> 'last_synced_at' NULLS FIRST, created_at\n            LIMIT $1\n            ",
+  "query": "\n            SELECT\n                id,\n                workspace_id,\n                agent as \"agent: _\",\n                environment as \"environment: _\",\n                input,\n                status,\n                host_id,\n                lease_expires_at,\n                started_at,\n                finished_at,\n                stop_reason,\n                error,\n                outcome as \"outcome: _\",\n                pr_status as \"pr_status: _\",\n                parent_session_id,\n                routine_id,\n                cancel_requested,\n                created_at,\n                updated_at\n            FROM sessions\n            WHERE workspace_id = $1 AND routine_id = $2\n            ORDER BY created_at DESC\n            ",
   "describe": {
     "columns": [
       {
@@ -170,6 +170,17 @@
       },
       {
         "ordinal": 15,
+        "name": "routine_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "routine_id"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
         "name": "cancel_requested",
         "type_info": "Bool",
         "origin": {
@@ -180,7 +191,7 @@
         }
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -191,7 +202,7 @@
         }
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -204,7 +215,8 @@
     ],
     "parameters": {
       "Left": [
-        "Int8"
+        "Text",
+        "Text"
       ]
     },
     "nullable": [
@@ -223,10 +235,11 @@
       true,
       true,
       true,
+      true,
       false,
       false,
       false
     ]
   },
-  "hash": "49579177eb4495a7328ce666f9c0195234473636674de3d2b39a3459b019b6dc"
+  "hash": "5928823c415e62e43082f9e5b483664d277242a0c7a586a618e6237091592465"
 }

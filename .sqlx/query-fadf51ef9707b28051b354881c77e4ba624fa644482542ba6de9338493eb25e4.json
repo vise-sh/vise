@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE sessions\n            SET cancel_requested = true,\n                status = CASE WHEN status = 'pending' THEN 'cancelled' ELSE status END,\n                finished_at = CASE WHEN status = 'pending' THEN now() ELSE finished_at END,\n                updated_at = now()\n            WHERE workspace_id = $1 AND id = $2 AND status IN ('pending', 'running')\n            RETURNING\n                id,\n                workspace_id,\n                agent as \"agent: _\",\n                environment as \"environment: _\",\n                input,\n                status,\n                host_id,\n                lease_expires_at,\n                started_at,\n                finished_at,\n                stop_reason,\n                error,\n                outcome as \"outcome: _\",\n                pr_status as \"pr_status: _\",\n                parent_session_id,\n                cancel_requested,\n                created_at,\n                updated_at\n            ",
+  "query": "\n            SELECT\n                id,\n                workspace_id,\n                agent as \"agent: _\",\n                environment as \"environment: _\",\n                input,\n                status,\n                host_id,\n                lease_expires_at,\n                started_at,\n                finished_at,\n                stop_reason,\n                error,\n                outcome as \"outcome: _\",\n                pr_status as \"pr_status: _\",\n                parent_session_id,\n                routine_id,\n                cancel_requested,\n                created_at,\n                updated_at\n            FROM sessions\n            WHERE workspace_id = $1 AND id = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -170,6 +170,17 @@
       },
       {
         "ordinal": 15,
+        "name": "routine_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "routine_id"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
         "name": "cancel_requested",
         "type_info": "Bool",
         "origin": {
@@ -180,7 +191,7 @@
         }
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -191,7 +202,7 @@
         }
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -224,10 +235,11 @@
       true,
       true,
       true,
+      true,
       false,
       false,
       false
     ]
   },
-  "hash": "a117866b1c604dfa0634c656f00cdd22a0604fae7e8a14d4357c0c68ab2205d1"
+  "hash": "fadf51ef9707b28051b354881c77e4ba624fa644482542ba6de9338493eb25e4"
 }

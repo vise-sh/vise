@@ -1,0 +1,161 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE routines\n            SET next_run_at = $1 + interval '5 minutes'\n            WHERE id IN (\n                SELECT id FROM routines\n                WHERE enabled AND next_run_at <= $1\n                ORDER BY next_run_at\n                LIMIT $2\n                FOR UPDATE SKIP LOCKED\n            )\n            RETURNING\n                id,\n                workspace_id,\n                name,\n                cron,\n                timezone,\n                spec as \"spec: _\",\n                enabled,\n                next_run_at,\n                last_fired_at,\n                last_session_id,\n                created_at,\n                updated_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "routines",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "workspace_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "routines",
+            "name": "workspace_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "routines",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "cron",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "routines",
+            "name": "cron"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "timezone",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "routines",
+            "name": "timezone"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "spec: _",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "routines",
+            "name": "spec"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "enabled",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "routines",
+            "name": "enabled"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "next_run_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "routines",
+            "name": "next_run_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "last_fired_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "routines",
+            "name": "last_fired_at"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "last_session_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "routines",
+            "name": "last_session_id"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "routines",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "routines",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "b8b105b70c929e0faa8ce9310e32f11cef2ca4ffdab476eee2e25390c4b29caa"
+}

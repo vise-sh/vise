@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM routines\n            WHERE workspace_id = $1 AND id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "531c898b51c6799dfb4bd1deaee51d285f97bdb1144c5199fb8c68366e6319ad"
+}

@@ -159,6 +159,10 @@ pub struct Session {
     /// Follow-ups chain; PR tracking always lives on the root session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_session_id: Option<String>,
+    /// Set on sessions spawned by a routine: the routine that created this
+    /// session. Lets a routine list the sessions it has spawned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routine_id: Option<String>,
     pub cancel_requested: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

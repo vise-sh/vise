@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            UPDATE sessions\n            SET status = $3,\n                stop_reason = $4,\n                error = $5,\n                outcome = $6,\n                lease_expires_at = NULL,\n                finished_at = now(),\n                updated_at = now()\n            WHERE id = $2 AND host_id = $1 AND status = 'running'\n              AND workspace_id = (SELECT workspace_id FROM hosts WHERE id = $1)\n            RETURNING\n                id,\n                workspace_id,\n                agent as \"agent: _\",\n                environment as \"environment: _\",\n                input,\n                status,\n                host_id,\n                lease_expires_at,\n                started_at,\n                finished_at,\n                stop_reason,\n                error,\n                outcome as \"outcome: _\",\n                pr_status as \"pr_status: _\",\n                parent_session_id,\n                cancel_requested,\n                created_at,\n                updated_at\n            ",
+  "query": "\n            UPDATE sessions\n            SET status = 'running',\n                host_id = $1,\n                lease_expires_at = now() + interval '60 seconds',\n                started_at = now(),\n                updated_at = now()\n            WHERE id = (\n                SELECT id FROM sessions\n                WHERE status = 'pending'\n                  AND workspace_id = (SELECT workspace_id FROM hosts WHERE id = $1)\n                ORDER BY created_at\n                LIMIT 1\n                FOR UPDATE SKIP LOCKED\n            )\n            RETURNING\n                id,\n                workspace_id,\n                agent as \"agent: _\",\n                environment as \"environment: _\",\n                input,\n                status,\n                host_id,\n                lease_expires_at,\n                started_at,\n                finished_at,\n                stop_reason,\n                error,\n                outcome as \"outcome: _\",\n                pr_status as \"pr_status: _\",\n                parent_session_id,\n                routine_id,\n                cancel_requested,\n                created_at,\n                updated_at\n            ",
   "describe": {
     "columns": [
       {
@@ -170,6 +170,17 @@
       },
       {
         "ordinal": 15,
+        "name": "routine_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sessions",
+            "name": "routine_id"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
         "name": "cancel_requested",
         "type_info": "Bool",
         "origin": {
@@ -180,7 +191,7 @@
         }
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -191,7 +202,7 @@
         }
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -204,12 +215,7 @@
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Text",
-        "Text",
-        "Text",
-        "Text",
-        "Jsonb"
+        "Text"
       ]
     },
     "nullable": [
@@ -228,10 +234,11 @@
       true,
       true,
       true,
+      true,
       false,
       false,
       false
     ]
   },
-  "hash": "012bf395ed98ce7d3428b8bca43a8106caa10a76371cb4d5c875846571c54288"
+  "hash": "32b1b25a7a405743187d5646555b8c905238b3bffe50427f225ec12cf1121293"
 }

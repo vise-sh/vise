@@ -72,6 +72,7 @@ async fn create_session(pool: &PgPool, workspace: &WorkspaceId) -> Session {
             outcome: None,
             pr_status: None,
             parent_session_id: None,
+            routine_id: None,
             cancel_requested: false,
             created_at: now,
             updated_at: now,

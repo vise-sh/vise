@@ -27,6 +27,13 @@ pub trait SessionRepository: Send + Sync {
 
     async fn list(&self, workspace: &WorkspaceId) -> anyhow::Result<Vec<Session>>;
 
+    /// Sessions spawned by a given routine, newest first. Workspace-scoped.
+    async fn list_by_routine(
+        &self,
+        workspace: &WorkspaceId,
+        routine_id: &str,
+    ) -> anyhow::Result<Vec<Session>>;
+
     async fn delete(&self, workspace: &WorkspaceId, id: &str) -> anyhow::Result<()>;
 
     /// Events of a session in `workspace`. A session id from another
