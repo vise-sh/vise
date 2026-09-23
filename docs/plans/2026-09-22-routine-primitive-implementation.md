@@ -214,7 +214,7 @@ The session spawn must stamp `routine_id`, and reads must surface it. Do this in
 - Modify: `crates/vise-core/src/sessions/model.rs` (add `routine_id: Option<String>` to `Session`)
 - Modify: `crates/vise-core/src/sessions/service.rs` (`create` gains a `routine_id` param)
 - Modify: `crates/vise-core/src/sessions/repository.rs` (new method `list_by_routine`; `create` already takes a `Session`)
-- Modify: `crates/vise-core/src/sessions/postgres.rs` (INSERT + all `SessionRow`/SELECTs include `routine_id`)
+- Modify: `crates/vise-core/src/sessions/postgres.rs` (INSERT + every `SessionRow` SELECT includes `routine_id`)
 - Test: `crates/vise-core/tests/sessions.rs` (new) or extend an existing session test.
 
 **Step 1: Failing test** (new `crates/vise-core/tests/routine_sessions.rs`):

@@ -24,7 +24,7 @@ pub struct TickReport {
     /// Routines that were due but skipped because a prior run was still active.
     pub skipped: usize,
     /// Routines that errored while being handled this tick (e.g. an
-    /// unparseable cron). One bad routine does not starve the rest of the batch.
+    /// unparsable cron). One bad routine does not starve the rest of the batch.
     pub failed: usize,
 }
 

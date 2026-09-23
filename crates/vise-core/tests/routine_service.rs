@@ -392,7 +392,7 @@ async fn tick_isolates_a_poison_routine(pool: PgPool) {
         .unwrap();
 
     // A poison routine: created valid (so it passes create-time validation),
-    // then corrupted at the storage layer to an unparseable cron so `next_after`
+    // then corrupted at the storage layer to an unparsable cron so `next_after`
     // fails when `tick` handles it. Also forced due via record_fire.
     let poison = service
         .create(
